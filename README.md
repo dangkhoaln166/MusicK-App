@@ -1,4 +1,4 @@
-# MusicK 🎵
+# MusicK 
 
 ![Flutter](https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
@@ -7,7 +7,7 @@
 
 MusicK is a modern, high-performance music streaming application built with a **Flutter** frontend and a **FastAPI (Python)** backend. It provides a seamless listening experience with real-time audio playback, playlist management, and a stunning Glassmorphism UI.
 
-## ✨ Features
+##  Features
 
 - **Modern UI/UX**: Cyberpunk-inspired dark theme, glassmorphic elements, and ultra-smooth tactile animations.
 - **Audio Streaming**: Seamless background playback with full audio controls (Loop, Shuffle, Next/Previous) using `just_audio`.
@@ -16,7 +16,7 @@ MusicK is a modern, high-performance music streaming application built with a **
 - **Real-time Search**: Fast and intelligent search capabilities to discover new music.
 - **Responsive Layout**: Optimized for both mobile devices and desktop web browsers.
 
-## 🛠️ Technology Stack
+##  Technology Stack
 
 ### Frontend
 - **Framework**: Flutter (Dart)
@@ -30,7 +30,7 @@ MusicK is a modern, high-performance music streaming application built with a **
 - **Integration**: yt-dlp (for audio extraction)
 - **Architecture**: RESTful APIs with asynchronous processing.
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Prerequisites
 - Flutter SDK (>=3.0.0)
@@ -53,14 +53,14 @@ flutter pub get
 flutter run
 ```
 
-## 📸 Screenshots
+##  Screenshots
 
-*(Add screenshots of your Home Tab, Player Screen, and Playlist Screen here)*
 
-## 🤝 Contributing
+
+##  Contributing
 
 Contributions, issues, and feature requests are welcome!
 
-## 📝 License
+##  License
 
 This project is open-source and available under the MIT License.
