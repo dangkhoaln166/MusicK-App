@@ -26,7 +26,7 @@ def extract_search_results(query: str, max_results: int = 10) -> List[Dict[str, 
                     "thumbnail": entry.get("thumbnails", [{}])[-1].get("url") if entry.get("thumbnails") else None,
                     "channel": entry.get("uploader")
                 }
-                for entry in result['entries'] if entry
+                for entry in result['entries'] if entry and entry.get("id") and len(entry.get("id")) == 11
             ]
         return []
 
@@ -94,8 +94,9 @@ def get_suggestions(query: str) -> List[str]:
         print(f"Error fetching suggestions: {e}")
     return []
 
-def extract_lyrics(query: str) -> Optional[Dict[str, Optional[str]]]:
-    # LrcLib is a great free open API for lyrics
+import re
+
+def _fetch_lrclib(query: str) -> Optional[Dict[str, Optional[str]]]:
     url = f"https://lrclib.net/api/search?q={quote(query)}"
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'MusicK/1.0'})
@@ -109,5 +110,35 @@ def extract_lyrics(query: str) -> Optional[Dict[str, Optional[str]]]:
                             "syncedLyrics": track.get('syncedLyrics')
                         }
     except Exception as e:
-        print(f"Error fetching lyrics: {e}")
+        pass
     return None
+
+def extract_lyrics(query: str) -> Optional[Dict[str, Optional[str]]]:
+    # Try the original query
+    res = _fetch_lrclib(query)
+    if res: return res
+
+    # 1. Clean the title from parentheses, brackets, "official"
+    clean_query = re.sub(r'\(.*?\)', '', query)
+    clean_query = re.sub(r'\[.*?\]', '', clean_query)
+    clean_query = re.sub(r'(?i)official.*', '', clean_query)
+    clean_query = clean_query.replace('|', ' ').replace('-', ' ')
+    clean_query = re.sub(r'\s+', ' ', clean_query).strip()
+
+    if clean_query != query and clean_query:
+        res = _fetch_lrclib(clean_query)
+        if res: return res
+
+    # 2. Try the first part before a pipe or dash, in case it's "Song Name - Artist" or "Song Name | Artist"
+    if '|' in query:
+        first_part = query.split('|')[0].strip()
+        res = _fetch_lrclib(first_part)
+        if res: return res
+        
+    if '-' in query:
+        first_part = query.split('-')[0].strip()
+        res = _fetch_lrclib(first_part)
+        if res: return res
+
+    return None
+

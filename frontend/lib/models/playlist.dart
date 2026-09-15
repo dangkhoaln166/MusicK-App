@@ -25,8 +25,8 @@ class Playlist {
     return Playlist(
       id: json['id'],
       name: json['name'],
-      tracks: (json['tracks'] as List).map((e) => Track.fromJson(Map<String, dynamic>.from(e))).toList(),
-      createdAt: DateTime.parse(json['createdAt']),
+      tracks: json['tracks'] != null ? (json['tracks'] as List).map((e) => Track.fromJson(Map<String, dynamic>.from(e))).toList() : [],
+      createdAt: DateTime.parse(json['created_at'] ?? json['createdAt'] ?? DateTime.now().toIso8601String()),
     );
   }
 

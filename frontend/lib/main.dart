@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'providers/music_provider.dart';
 import 'screens/main_layout.dart';
@@ -35,6 +36,14 @@ class MyApp extends StatelessWidget {
           insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
           actionTextColor: Colors.greenAccent,
         ),
+      ),
+      scrollBehavior: const MaterialScrollBehavior().copyWith(
+        dragDevices: {
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.touch,
+          PointerDeviceKind.stylus,
+          PointerDeviceKind.unknown,
+        },
       ),
       home: const MainLayout(),
     );

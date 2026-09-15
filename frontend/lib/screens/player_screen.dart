@@ -20,6 +20,7 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
   late AnimationController _animationController;
   Track? _cachedTrack;
   Future<Map<String, dynamic>?>? _lyricsFuture;
+  int _lyricOffset = 0;
 
   @override
   void initState() {
@@ -39,8 +40,8 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     final track = mp.currentTrack;
     if (track != null && track.videoId != _cachedTrack?.videoId) {
       _cachedTrack = track;
-      final cleanTitle = track.title.split(RegExp(r'[\(\[|]'))[0].trim();
-      _lyricsFuture = ApiService().getLyrics(cleanTitle);
+      _lyricOffset = 0; // Reset offset on new track
+      _lyricsFuture = ApiService().getLyrics(track.title);
     }
   }
 
@@ -163,12 +164,17 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
   }
 
   Widget _buildLyricsView(Track track) {
-    return FutureBuilder<Map<String, dynamic>?>(
-      future: _lyricsFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: Colors.white24));
-        }
+    return Column(
+      children: [
+        _buildSyncControls(),
+        const SizedBox(height: 10),
+        Expanded(
+          child: FutureBuilder<Map<String, dynamic>?>(
+            future: _lyricsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: Colors.white24));
+              }
 
         final data = snapshot.data;
         if (data == null || (data['syncedLyrics'] == null && data['plainLyrics'] == null)) {
@@ -178,20 +184,65 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
         if (data['syncedLyrics'] != null) {
           final lines = LyricLine.parseLrc(data['syncedLyrics']);
           if (lines.isNotEmpty) {
-            return SyncedLyricsWidget(lyrics: lines);
+            return SyncedLyricsWidget(lyrics: lines, offset: _lyricOffset);
           }
         }
 
-        // Fallback to plain lyrics
-        return SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
-          child: Text(
-            data['plainLyrics'] ?? '',
-            style: const TextStyle(fontSize: 20, height: 2.0, color: Colors.white70),
-            textAlign: TextAlign.center,
+              // Fallback to plain lyrics
+              return SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
+                child: Text(
+                  data['plainLyrics'] ?? '',
+                  style: const TextStyle(fontSize: 20, height: 2.0, color: Colors.white70),
+                  textAlign: TextAlign.center,
+                ),
+              );
+            },
           ),
-        );
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSyncControls() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.timer_outlined, color: Colors.white54, size: 16),
+          const SizedBox(width: 8),
+          _syncButton('-5s', -5000),
+          _syncButton('-1s', -1000),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              "Sync: ${_lyricOffset > 0 ? '+' : ''}${_lyricOffset / 1000}s",
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+          _syncButton('+1s', 1000),
+          _syncButton('+5s', 5000),
+        ],
+      ),
+    );
+  }
+
+  Widget _syncButton(String label, int amount) {
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _lyricOffset += amount;
+        });
       },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Text(label, style: const TextStyle(color: Colors.blueAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+      ),
     );
   }
 
@@ -595,12 +646,25 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                           padding: const EdgeInsets.all(32.0),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              Icon(Icons.library_music_outlined, size: 60, color: Colors.white24),
+                            children: [
+                              const Icon(Icons.library_music_outlined, size: 60, color: Colors.white24),
                               SizedBox(height: 16),
-                              Text("No Playlists Found", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                              SizedBox(height: 8),
-                              Text("Go to the Library tab to create your first playlist!", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
+                              const Text("No Playlists Found", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 8),
+                              const Text("Go to the Library tab to create your first playlist!", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blueAccent,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                ),
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _showCreatePlaylistDialog(context);
+                                },
+                                icon: const Icon(Icons.add),
+                                label: const Text('Create Playlist', style: TextStyle(fontWeight: FontWeight.bold)),
+                              ),
                             ],
                           ),
                         );
@@ -645,6 +709,50 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  void _showCreatePlaylistDialog(BuildContext context) {
+    final TextEditingController controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: Colors.grey.shade900,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Give your playlist a name', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          content: TextField(
+            controller: controller,
+            style: const TextStyle(color: Colors.white, fontSize: 18),
+            decoration: InputDecoration(
+              hintText: 'My Playlist',
+              hintStyle: TextStyle(color: Colors.grey.shade600),
+              enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+              focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
+            ),
+            autofocus: true,
+          ),
+          actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white54, fontSize: 16)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blueAccent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              onPressed: () {
+                Provider.of<MusicProvider>(context, listen: false).createPlaylist(controller.text);
+                Navigator.pop(ctx);
+              },
+              child: const Text('Create', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ],
         );
       },
     );

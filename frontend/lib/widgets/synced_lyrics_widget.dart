@@ -6,8 +6,9 @@ import '../providers/music_provider.dart';
 
 class SyncedLyricsWidget extends StatefulWidget {
   final List<LyricLine> lyrics;
+  final int offset;
 
-  const SyncedLyricsWidget({Key? key, required this.lyrics}) : super(key: key);
+  const SyncedLyricsWidget({Key? key, required this.lyrics, this.offset = 0}) : super(key: key);
 
   @override
   _SyncedLyricsWidgetState createState() => _SyncedLyricsWidgetState();
@@ -36,9 +37,11 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
   void _checkPosition(Duration position) {
     if (widget.lyrics.isEmpty || !mounted) return;
 
+    final adjustedPosition = Duration(milliseconds: position.inMilliseconds + widget.offset);
+
     int newIndex = 0;
     for (int i = 0; i < widget.lyrics.length; i++) {
-      if (position >= widget.lyrics[i].time) {
+      if (adjustedPosition >= widget.lyrics[i].time) {
         newIndex = i;
       } else {
         break;
@@ -79,7 +82,8 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
   @override
   void didUpdateWidget(covariant SyncedLyricsWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.lyrics != widget.lyrics) {
+    if (oldWidget.lyrics.length != widget.lyrics.length || 
+        (oldWidget.lyrics.isNotEmpty && widget.lyrics.isNotEmpty && oldWidget.lyrics.first.text != widget.lyrics.first.text)) {
       _keys = List.generate(widget.lyrics.length, (_) => GlobalKey());
       _currentIndex = 0;
     }
@@ -118,7 +122,7 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
           key: _keys[index],
           onTap: () {
             final mp = context.read<MusicProvider>();
-            mp.seek(widget.lyrics[index].time);
+            mp.seek(Duration(milliseconds: widget.lyrics[index].time.inMilliseconds - widget.offset));
           },
           child: Padding(
             padding: EdgeInsets.symmetric(vertical: isActive ? 12.0 : 8.0),

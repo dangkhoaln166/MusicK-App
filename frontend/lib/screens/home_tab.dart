@@ -22,7 +22,10 @@ class _HomeTabState extends State<HomeTab> {
   @override
   Widget build(BuildContext context) {
     final musicProvider = Provider.of<MusicProvider>(context);
-    final quickPicks = musicProvider.favorites.take(6).toList();
+    final quickPicks = musicProvider.favorites.isNotEmpty 
+        ? musicProvider.favorites.take(6).toList() 
+        : musicProvider.queue.take(6).toList();
+    final String quickPicksTitle = musicProvider.favorites.isNotEmpty ? 'Quick Picks' : 'Recently Played';
     final trendingPlaylists = musicProvider.playlists.take(6).toList();
 
     return Container(
@@ -110,9 +113,9 @@ class _HomeTabState extends State<HomeTab> {
                       padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
                       child: Row(
                         children: [
-                          const Text(
-                            'Quick Picks',
-                            style: TextStyle(
+                          Text(
+                            quickPicksTitle,
+                            style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.w800,
                               color: Colors.white,

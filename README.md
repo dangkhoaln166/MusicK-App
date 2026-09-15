@@ -38,12 +38,23 @@ MusicK is a modern, high-performance music streaming application built with a **
 - FFmpeg (for audio processing)
 
 ### Backend Setup
-```bash
+
+**For Windows (PowerShell):**
+```powershell
 cd backend
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python -m uvicorn app.main:app --reload
+```
+
+**For macOS / Linux:**
+```bash
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python3 -m uvicorn app.main:app --reload
 ```
 
 ### Frontend Setup

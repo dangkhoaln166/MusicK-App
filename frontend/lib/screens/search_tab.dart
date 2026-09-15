@@ -152,6 +152,7 @@ class _SearchTabState extends State<SearchTab> {
           Expanded(
             child: _isTyping && musicProvider.suggestions.isNotEmpty
                 ? ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 100),
                     itemCount: musicProvider.suggestions.length,
                     itemBuilder: (context, index) {
                       final suggestion = musicProvider.suggestions[index];
@@ -165,6 +166,7 @@ class _SearchTabState extends State<SearchTab> {
                 : musicProvider.isLoading
                     ? const Center(child: CircularProgressIndicator(color: Colors.blueAccent))
                     : ListView.builder(
+                        padding: const EdgeInsets.only(bottom: 100),
                         controller: _scrollController,
                         itemCount: musicProvider.searchResults.length + (musicProvider.isLoadingMore ? 1 : 0),
                         itemBuilder: (context, index) {
@@ -266,12 +268,25 @@ class _SearchTabState extends State<SearchTab> {
                           padding: const EdgeInsets.all(32.0),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              Icon(Icons.library_music_outlined, size: 60, color: Colors.white24),
+                            children: [
+                              const Icon(Icons.library_music_outlined, size: 60, color: Colors.white24),
                               SizedBox(height: 16),
-                              Text("No Playlists Found", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                              SizedBox(height: 8),
-                              Text("Go to the Library tab to create your first playlist!", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
+                              const Text("No Playlists Found", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 8),
+                              const Text("Go to the Library tab to create your first playlist!", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blueAccent,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                ),
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _showCreatePlaylistDialog(context);
+                                },
+                                icon: const Icon(Icons.add),
+                                label: const Text('Create Playlist', style: TextStyle(fontWeight: FontWeight.bold)),
+                              ),
                             ],
                           ),
                         );
@@ -316,6 +331,50 @@ class _SearchTabState extends State<SearchTab> {
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  void _showCreatePlaylistDialog(BuildContext context) {
+    final TextEditingController controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: Colors.grey.shade900,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Give your playlist a name', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          content: TextField(
+            controller: controller,
+            style: const TextStyle(color: Colors.white, fontSize: 18),
+            decoration: InputDecoration(
+              hintText: 'My Playlist',
+              hintStyle: TextStyle(color: Colors.grey.shade600),
+              enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+              focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
+            ),
+            autofocus: true,
+          ),
+          actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white54, fontSize: 16)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blueAccent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              onPressed: () {
+                Provider.of<MusicProvider>(context, listen: false).createPlaylist(controller.text);
+                Navigator.pop(ctx);
+              },
+              child: const Text('Create', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ],
         );
       },
     );

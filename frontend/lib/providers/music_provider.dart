@@ -47,7 +47,7 @@ class MusicProvider with ChangeNotifier {
   double get volume => _volume;
 
   MusicProvider() {
-    _loadPreferences();
+    _loadData();
     _audioPlayer.playerStateStream.listen((state) {
       _isPlaying = state.playing;
       if (state.processingState == ProcessingState.completed) {
@@ -79,7 +79,7 @@ class MusicProvider with ChangeNotifier {
     });
   }
 
-  Future<void> _loadPreferences() async {
+  Future<void> _loadData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final queueStr = prefs.getString('queue');
@@ -88,20 +88,17 @@ class MusicProvider with ChangeNotifier {
         _queue = decoded.map((e) => Track.fromJson(Map<String, dynamic>.from(e))).toList();
       }
       
-      final favStr = prefs.getString('favorites');
-      if (favStr != null) {
-        final List decoded = json.decode(favStr);
-        _favorites = decoded.map((e) => Track.fromJson(Map<String, dynamic>.from(e))).toList();
+      final currentTrackStr = prefs.getString('currentTrack');
+      if (currentTrackStr != null) {
+        _currentTrack = Track.fromJson(Map<String, dynamic>.from(json.decode(currentTrackStr)));
       }
       
-      final playStr = prefs.getString('playlists');
-      if (playStr != null) {
-        final List decoded = json.decode(playStr);
-        _playlists = decoded.map((e) => Playlist.fromJson(Map<String, dynamic>.from(e))).toList();
-      }
+      _favorites = await _apiService.getFavorites();
+      _playlists = await _apiService.getPlaylists();
+      
       notifyListeners();
     } catch (e) {
-      print("Error loading preferences: $e");
+      print("Error loading data: $e");
     }
   }
 
@@ -111,54 +108,52 @@ class MusicProvider with ChangeNotifier {
     await prefs.setString('queue', encoded);
   }
 
-  Future<void> _saveFavorites() async {
-    final prefs = await SharedPreferences.getInstance();
-    final encoded = json.encode(_favorites.map((e) => e.toJson()).toList());
-    await prefs.setString('favorites', encoded);
-  }
 
-  Future<void> _savePlaylists() async {
+
+  Future<void> _saveCurrentTrack() async {
     final prefs = await SharedPreferences.getInstance();
-    final encoded = json.encode(_playlists.map((e) => e.toJson()).toList());
-    await prefs.setString('playlists', encoded);
+    if (_currentTrack != null) {
+      await prefs.setString('currentTrack', json.encode(_currentTrack!.toJson()));
+    }
   }
 
   // Playlist Management
-  void createPlaylist(String name) {
+  Future<void> createPlaylist(String name) async {
     if (name.trim().isEmpty) return;
-    final newPlaylist = Playlist(id: const Uuid().v4(), name: name.trim());
-    _playlists.add(newPlaylist);
-    _savePlaylists();
-    notifyListeners();
-  }
-
-  void deletePlaylist(String id) {
-    _playlists.removeWhere((p) => p.id == id);
-    _savePlaylists();
-    notifyListeners();
-  }
-
-  void addTrackToPlaylist(String playlistId, Track track) {
-    final playlist = _playlists.firstWhere((p) => p.id == playlistId);
-    if (!playlist.tracks.any((t) => t.videoId == track.videoId)) {
-      playlist.tracks.add(track);
-      _savePlaylists();
+    final newPlaylist = await _apiService.createPlaylist(name.trim());
+    if (newPlaylist != null) {
+      _playlists.add(newPlaylist);
       notifyListeners();
     }
   }
 
-  void removeTrackFromPlaylist(String playlistId, String trackId) {
-    final playlist = _playlists.firstWhere((p) => p.id == playlistId);
-    playlist.tracks.removeWhere((t) => t.videoId == trackId);
-    _savePlaylists();
+  Future<void> deletePlaylist(String id) async {
+    _playlists.removeWhere((p) => p.id == id);
+    await _apiService.deletePlaylist(id);
     notifyListeners();
   }
 
-  void renamePlaylist(String id, String newName) {
+  Future<void> addTrackToPlaylist(String playlistId, Track track) async {
+    final playlist = _playlists.firstWhere((p) => p.id == playlistId);
+    if (!playlist.tracks.any((t) => t.videoId == track.videoId)) {
+      playlist.tracks.add(track);
+      await _apiService.addTrackToPlaylist(playlistId, track);
+      notifyListeners();
+    }
+  }
+
+  Future<void> removeTrackFromPlaylist(String playlistId, String trackId) async {
+    final playlist = _playlists.firstWhere((p) => p.id == playlistId);
+    playlist.tracks.removeWhere((t) => t.videoId == trackId);
+    await _apiService.removeTrackFromPlaylist(playlistId, trackId);
+    notifyListeners();
+  }
+
+  Future<void> renamePlaylist(String id, String newName) async {
     if (newName.trim().isEmpty) return;
     final playlist = _playlists.firstWhere((p) => p.id == id);
     playlist.name = newName.trim();
-    _savePlaylists();
+    await _apiService.renamePlaylist(id, newName.trim());
     notifyListeners();
   }
 
@@ -220,6 +215,7 @@ class MusicProvider with ChangeNotifier {
 
   Future<void> playTrack(Track track) async {
     _currentTrack = track;
+    _saveCurrentTrack(); // Save track for persistence
     // Update _currentIndex only if track is in _searchResults (don't override if caller already set it)
     final idx = _searchResults.indexOf(track);
     if (idx != -1) _currentIndex = idx;
@@ -296,13 +292,14 @@ class MusicProvider with ChangeNotifier {
     }
   }
 
-  void toggleFavorite(Track track) {
+  Future<void> toggleFavorite(Track track) async {
     if (isFavorite(track)) {
       _favorites.removeWhere((t) => t.videoId == track.videoId);
+      await _apiService.removeFavorite(track.videoId);
     } else {
       _favorites.add(track);
+      await _apiService.addFavorite(track);
     }
-    _saveFavorites();
     notifyListeners();
   }
 
