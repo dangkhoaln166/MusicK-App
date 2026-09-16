@@ -9,3 +9,4 @@ pykakasi
 pypinyin
 korean_romanizer
 langdetect
+httpx
