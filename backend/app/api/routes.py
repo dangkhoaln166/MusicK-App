@@ -1,5 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Depends
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
+from app.db.database import get_db
+from app.db import models
 import httpx
 from app.services import youtube
 import os
@@ -10,22 +13,58 @@ router = APIRouter()
 executor = ThreadPoolExecutor(max_workers=10)
 
 @router.get("/search")
-async def search(q: str = Query(..., min_length=1), page: int = Query(1, ge=1), limit: int = Query(15, ge=1, le=50)):
-    """Searches YouTube and returns a paginated list of matching videos."""
+async def search(q: str = Query(...), page: int = Query(1), limit: int = Query(20)):
     try:
         loop = asyncio.get_event_loop()
-        max_results = page * limit
-        results = await loop.run_in_executor(executor, youtube.extract_search_results, q, max_results)
+        results = await loop.run_in_executor(executor, youtube.extract_search_results, q, 20)
         
-        # Calculate slice
+        # Results now contain "channels" and "tracks"
+        tracks = results.get("tracks", [])
+        channels = results.get("channels", []) if page == 1 else []
+        
+        # Calculate slice for tracks
         start_idx = (page - 1) * limit
         end_idx = start_idx + limit
         
-        paginated_results = results[start_idx:end_idx] if start_idx < len(results) else []
+        # Paginate tracks
+        paginated_tracks = tracks[start_idx:end_idx]
         
-        return {"results": paginated_results}
+        return {
+            "results": paginated_tracks, 
+            "channels": channels,
+            "total": len(tracks), 
+            "page": page, 
+            "limit": limit
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/explore")
+async def get_explore():
+    try:
+        loop = asyncio.get_event_loop()
+        explore_data = await loop.run_in_executor(executor, youtube.get_explore)
+        return explore_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/charts")
+async def get_charts():
+    try:
+        loop = asyncio.get_event_loop()
+        charts_data = await loop.run_in_executor(executor, youtube.get_global_charts)
+        return charts_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/channels/{channel_id}/videos")
+async def get_channel_videos(channel_id: str, sort_by: str = Query('p'), page: int = Query(1), limit: int = Query(30)):
+    try:
+        loop = asyncio.get_event_loop()
+        videos = await loop.run_in_executor(executor, youtube.get_channel_videos, channel_id, sort_by, page, limit)
+        return {"results": videos}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/stream/{video_id}")
 async def get_stream(video_id: str, request: Request):
@@ -120,24 +159,48 @@ async def suggest(q: str = Query(..., min_length=1)):
         raise HTTPException(status_code=500, detail=f"Suggest failed: {str(e)}")
 
 @router.get("/lyrics")
-async def get_lyrics(q: str = Query(..., min_length=1)):
-    """Fetches lyrics for a given query."""
+async def get_lyrics(q: str = Query(..., min_length=1), db: Session = Depends(get_db)):
+    """Fetches lyrics for a given query, utilizing local database cache."""
     try:
+        # 1. Check local cache
+        cache_entry = db.query(models.LyricCache).filter(models.LyricCache.query == q).first()
+        if cache_entry:
+            return {
+                "lyrics": {
+                    "plainLyrics": cache_entry.plain_lyrics,
+                    "syncedLyrics": cache_entry.synced_lyrics,
+                    "lang": cache_entry.lang
+                }
+            }
+
+        # 2. If not in cache, fetch from internet
         loop = asyncio.get_event_loop()
         lyrics = await loop.run_in_executor(executor, youtube.extract_lyrics, q)
         if not lyrics:
             raise HTTPException(status_code=404, detail="Lyrics not found")
         
-        # Detect language of the plain lyrics to pass back to frontend
+        # Detect language of the plain lyrics
         lang = 'unknown'
         plain_lyrics = lyrics.get('plainLyrics')
         if plain_lyrics:
             try:
+                from langdetect import detect
                 lang = detect(plain_lyrics)
             except:
                 pass
                 
         lyrics['lang'] = lang
+
+        # 3. Save to cache
+        new_cache = models.LyricCache(
+            query=q,
+            plain_lyrics=lyrics.get('plainLyrics'),
+            synced_lyrics=lyrics.get('syncedLyrics'),
+            lang=lang
+        )
+        db.add(new_cache)
+        db.commit()
+
         return {"lyrics": lyrics}
     except HTTPException:
         raise

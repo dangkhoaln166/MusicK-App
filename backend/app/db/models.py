@@ -35,3 +35,25 @@ class Favorite(Base):
 
     track_id = Column(String, ForeignKey("tracks.video_id", ondelete="CASCADE"), primary_key=True)
     track = relationship("Track")
+
+class History(Base):
+    __tablename__ = "history"
+
+    track_id = Column(String, ForeignKey("tracks.video_id", ondelete="CASCADE"), primary_key=True)
+    played_at = Column(DateTime, default=datetime.utcnow)
+    track = relationship("Track")
+
+class Setting(Base):
+    __tablename__ = "settings"
+
+    key = Column(String, primary_key=True, index=True)
+    value = Column(String, nullable=False)
+
+class LyricCache(Base):
+    __tablename__ = "lyric_cache"
+
+    query = Column(String, primary_key=True, index=True)
+    plain_lyrics = Column(String, nullable=True)
+    synced_lyrics = Column(String, nullable=True)
+    lang = Column(String, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

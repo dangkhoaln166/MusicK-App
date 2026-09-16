@@ -283,41 +283,56 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     final originalData = _lyricsCache[LyricsLanguage.original];
     final lang = originalData?['lang'] ?? 'unknown';
 
+    PopupMenuItem<LyricsLanguage> _buildMenuItem(LyricsLanguage value, String text, IconData icon) {
+      final isSelected = _lyricsLanguage == value;
+      return PopupMenuItem<LyricsLanguage>(
+        value: value,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: isSelected ? Colors.deepPurpleAccent.shade100 : Colors.white70),
+            const SizedBox(width: 12),
+            Text(
+              text, 
+              style: TextStyle(
+                color: isSelected ? Colors.deepPurpleAccent.shade100 : Colors.white,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                fontSize: 14,
+              )
+            ),
+            const SizedBox(width: 16), // Spacing before checkmark
+            if (isSelected)
+              Icon(Icons.check_circle, size: 18, color: Colors.deepPurpleAccent.shade100)
+            else
+              const SizedBox(width: 18), // Placeholder for alignment
+          ],
+        ),
+      );
+    }
+
     List<PopupMenuEntry<LyricsLanguage>> menuItems = [
-      const PopupMenuItem<LyricsLanguage>(
-        value: LyricsLanguage.original,
-        child: Text('Gốc (Original)', style: TextStyle(color: Colors.white)),
-      ),
+      _buildMenuItem(LyricsLanguage.original, 'Gốc (Original)', Icons.library_music),
     ];
 
     if (lang == 'vi') {
-      menuItems.add(const PopupMenuItem<LyricsLanguage>(
-        value: LyricsLanguage.translatedEn,
-        child: Text('Dịch sang Tiếng Anh', style: TextStyle(color: Colors.white)),
-      ));
+      menuItems.add(const PopupMenuDivider(height: 1));
+      menuItems.add(_buildMenuItem(LyricsLanguage.translatedEn, 'Dịch sang Tiếng Anh', Icons.g_translate));
     } else if (lang == 'en') {
-      menuItems.add(const PopupMenuItem<LyricsLanguage>(
-        value: LyricsLanguage.translatedVi,
-        child: Text('Dịch sang Tiếng Việt', style: TextStyle(color: Colors.white)),
-      ));
+      menuItems.add(const PopupMenuDivider(height: 1));
+      menuItems.add(_buildMenuItem(LyricsLanguage.translatedVi, 'Dịch sang Tiếng Việt', Icons.g_translate));
     } else {
-      menuItems.add(const PopupMenuItem<LyricsLanguage>(
-        value: LyricsLanguage.romaji,
-        child: Text('Latin (Romaji/Pinyin)', style: TextStyle(color: Colors.white)),
-      ));
-      menuItems.add(const PopupMenuItem<LyricsLanguage>(
-        value: LyricsLanguage.translatedVi,
-        child: Text('Dịch sang Tiếng Việt', style: TextStyle(color: Colors.white)),
-      ));
-      menuItems.add(const PopupMenuItem<LyricsLanguage>(
-        value: LyricsLanguage.translatedEn,
-        child: Text('Dịch sang Tiếng Anh', style: TextStyle(color: Colors.white)),
-      ));
+      menuItems.add(const PopupMenuDivider(height: 1));
+      menuItems.add(_buildMenuItem(LyricsLanguage.romaji, 'Phiên âm (Latin)', Icons.sort_by_alpha));
+      menuItems.add(const PopupMenuDivider(height: 1));
+      menuItems.add(_buildMenuItem(LyricsLanguage.translatedVi, 'Dịch sang Tiếng Việt', Icons.translate));
+      menuItems.add(_buildMenuItem(LyricsLanguage.translatedEn, 'Dịch sang Tiếng Anh', Icons.g_translate));
     }
 
     return PopupMenuButton<LyricsLanguage>(
       color: Colors.grey.shade900,
-      offset: const Offset(0, -120),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 8,
+      offset: const Offset(0, 40),
       onSelected: (LyricsLanguage result) async {
         if (_lyricsLanguage == result) return;
 
@@ -390,25 +405,25 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
       },
       itemBuilder: (BuildContext context) => menuItems,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.black45,
-          borderRadius: BorderRadius.circular(16),
+          color: Colors.black.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: Colors.white24, width: 1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.translate, size: 16, color: Colors.white70),
-            const SizedBox(width: 6),
+            Icon(Icons.translate, size: 16, color: Colors.deepPurpleAccent.shade100),
+            const SizedBox(width: 8),
             _isTranslating 
               ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70))
               : Text(
                   label,
-                  style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500),
+                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
                 ),
-            const SizedBox(width: 4),
-            const Icon(Icons.arrow_drop_down, size: 16, color: Colors.white70),
+            const SizedBox(width: 6),
+            const Icon(Icons.keyboard_arrow_down, size: 18, color: Colors.white70),
           ],
         ),
       ),
@@ -434,9 +449,9 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
             ),
           ],
         ),
-        child: RepaintBoundary(
-          child: RotationTransition(
-            turns: _animationController,
+        child: RotationTransition(
+          turns: _animationController,
+          child: RepaintBoundary(
             child: Container(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
@@ -453,12 +468,15 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                             width: size,
                             height: size,
                             fit: BoxFit.cover,
+                            filterQuality: FilterQuality.high,
                             errorBuilder: (context, error, stackTrace) => url != null 
+
                               ? Image.network(
                                   url,
                                   width: size,
                                   height: size,
                                   fit: BoxFit.cover,
+                                  filterQuality: FilterQuality.high,
                                   errorBuilder: (context, error, stackTrace) => Container(
                                     width: size,
                                     height: size,
@@ -615,11 +633,14 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
   }
 
   Widget _buildProgressBar(BuildContext context) {
-    return Consumer<MusicProvider>(
-      builder: (context, musicProvider, _) {
+    final musicProvider = Provider.of<MusicProvider>(context, listen: false);
+    return StreamBuilder<Duration>(
+      stream: musicProvider.audioPlayer.positionStream,
+      builder: (context, snapshot) {
+        final position = snapshot.data ?? musicProvider.position;
         return Row(
           children: [
-            Text(_formatDuration(musicProvider.position), style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+            Text(_formatDuration(position), style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
             Expanded(
               child: SliderTheme(
                 data: SliderTheme.of(context).copyWith(
@@ -633,7 +654,7 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                 child: Slider(
                   min: 0,
                   max: musicProvider.duration.inSeconds.toDouble() > 0 ? musicProvider.duration.inSeconds.toDouble() : 1.0,
-                  value: musicProvider.position.inSeconds.toDouble().clamp(0, musicProvider.duration.inSeconds.toDouble()),
+                  value: position.inSeconds.toDouble().clamp(0, musicProvider.duration.inSeconds.toDouble()),
                   onChanged: (value) {
                     musicProvider.seek(Duration(seconds: value.toInt()));
                   },

@@ -173,9 +173,7 @@ class _LibraryTabState extends State<LibraryTab> {
                     showDialog(
                       context: context,
                       builder: (ctx) => EditPlaylistDialog(
-                        playlistId: playlist.id,
-                        currentName: playlist.name,
-                        currentCoverUrl: playlist.customCoverImage,
+                        playlist: playlist,
                         musicProvider: musicProvider,
                       ),
                     );

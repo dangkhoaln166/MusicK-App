@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/track.dart';
 import '../models/playlist.dart';
+import '../models/channel.dart';
 import '../services/api_service.dart';
 
 class MusicProvider with ChangeNotifier {
@@ -12,7 +13,16 @@ class MusicProvider with ChangeNotifier {
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   List<Track> _searchResults = [];
+  List<Channel> _searchChannels = [];
   List<String> _suggestions = [];
+  List<String> _searchHistory = [];
+  List<Channel> _channelHistory = [];
+  
+  // Explore states
+  List<Track> _exploreTrending = [];
+  List<Track> _exploreNewReleases = [];
+  Map<String, List<Track>> _chartsData = {};
+  bool _isLoadingExplore = false;
   Track? _currentTrack;
   bool _isLoading = false;
   bool _isLoadingMore = false;
@@ -32,7 +42,16 @@ class MusicProvider with ChangeNotifier {
   double _volume = 1.0;
 
   List<Track> get searchResults => _searchResults;
+  List<Channel> get searchChannels => _searchChannels;
   List<String> get suggestions => _suggestions;
+  List<String> get searchHistory => _searchHistory;
+  List<Channel> get channelHistory => _channelHistory;
+  
+  List<Track> get exploreTrending => _exploreTrending;
+  List<Track> get exploreNewReleases => _exploreNewReleases;
+  Map<String, List<Track>> get chartsData => _chartsData;
+  bool get isLoadingExplore => _isLoadingExplore;
+
   List<Track> get queue => _queue;
   List<Track> get recentlyPlayed => _recentlyPlayed;
   List<Track> get favorites => _favorites;
@@ -66,13 +85,7 @@ class MusicProvider with ChangeNotifier {
     });
 
     _audioPlayer.positionStream.listen((pos) {
-      // Only notify when the displayed second changes (saves ~4 rebuilds/sec)
-      if (pos.inSeconds != _position.inSeconds) {
-        _position = pos;
-        notifyListeners();
-      } else {
-        _position = pos; // still update internally
-      }
+      _position = pos;
     });
 
     _audioPlayer.durationStream.listen((dur) {
@@ -85,23 +98,28 @@ class MusicProvider with ChangeNotifier {
 
   Future<void> _loadData() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final queueStr = prefs.getString('queue');
-      if (queueStr != null) {
+      final settings = await _apiService.getSettings();
+      
+      final queueStr = settings['queue'];
+      if (queueStr != null && queueStr.isNotEmpty) {
         final List decoded = json.decode(queueStr);
         _queue = decoded.map((e) => Track.fromJson(Map<String, dynamic>.from(e))).toList();
       }
       
-      final currentTrackStr = prefs.getString('currentTrack');
-      if (currentTrackStr != null) {
+      final currentTrackStr = settings['currentTrack'];
+      if (currentTrackStr != null && currentTrackStr.isNotEmpty) {
         _currentTrack = Track.fromJson(Map<String, dynamic>.from(json.decode(currentTrackStr)));
       }
 
-      final recentlyPlayedStr = prefs.getString('recentlyPlayed');
-      if (recentlyPlayedStr != null) {
-        final List decoded = json.decode(recentlyPlayedStr);
-        _recentlyPlayed = decoded.map((e) => Track.fromJson(Map<String, dynamic>.from(e))).toList();
+      final prefs = await SharedPreferences.getInstance();
+      _searchHistory = prefs.getStringList('searchHistory') ?? [];
+      final channelHistoryStr = prefs.getString('channelHistory');
+      if (channelHistoryStr != null) {
+        final List decoded = json.decode(channelHistoryStr);
+        _channelHistory = decoded.map((e) => Channel.fromJson(Map<String, dynamic>.from(e))).toList();
       }
+
+      _recentlyPlayed = await _apiService.getHistory();
       
       _favorites = await _apiService.getFavorites();
       _playlists = await _apiService.getPlaylists();
@@ -113,23 +131,17 @@ class MusicProvider with ChangeNotifier {
   }
 
   Future<void> _saveQueue() async {
-    final prefs = await SharedPreferences.getInstance();
     final encoded = json.encode(_queue.map((e) => e.toJson()).toList());
-    await prefs.setString('queue', encoded);
+    await _apiService.updateSetting('queue', encoded);
   }
-
-
 
   Future<void> _saveCurrentTrack() async {
     if (_currentTrack == null) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('currentTrack', json.encode(_currentTrack!.toJson()));
+    await _apiService.updateSetting('currentTrack', json.encode(_currentTrack!.toJson()));
   }
 
   Future<void> _saveRecentlyPlayed() async {
-    final prefs = await SharedPreferences.getInstance();
-    final list = _recentlyPlayed.map((e) => e.toJson()).toList();
-    await prefs.setString('recentlyPlayed', json.encode(list));
+    // History is saved track-by-track using addToHistory in playTrack
   }
 
 
@@ -180,11 +192,16 @@ class MusicProvider with ChangeNotifier {
     _currentQuery = query;
     notifyListeners();
 
+    _addToSearchHistory(query);
+
     try {
-      _searchResults = await _apiService.searchTracks(query, page: _currentPage);
+      final results = await _apiService.searchAll(query, page: _currentPage);
+      _searchResults = results['tracks'];
+      _searchChannels = results['channels'];
     } catch (e) {
       print("Search error: $e");
       _searchResults = [];
+      _searchChannels = [];
     }
 
     _isLoading = false;
@@ -200,8 +217,8 @@ class MusicProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final moreResults = await _apiService.searchTracks(_currentQuery, page: _currentPage);
-      _searchResults.addAll(moreResults);
+      final moreResults = await _apiService.searchAll(_currentQuery, page: _currentPage);
+      _searchResults.addAll(moreResults['tracks']);
     } catch (e) {
       print("Load more error: $e");
       _currentPage--; // Revert page on failure
@@ -225,12 +242,79 @@ class MusicProvider with ChangeNotifier {
     }
   }
 
+  Future<void> _addToSearchHistory(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) return;
+    _searchHistory.remove(q);
+    _searchHistory.insert(0, q);
+    if (_searchHistory.length > 20) _searchHistory = _searchHistory.sublist(0, 20);
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setStringList('searchHistory', _searchHistory);
+  }
+
+  Future<void> removeSearchHistory(String query) async {
+    _searchHistory.remove(query);
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setStringList('searchHistory', _searchHistory);
+  }
+
+  Future<void> fetchExplore() async {
+    if (_exploreTrending.isNotEmpty || _exploreNewReleases.isNotEmpty || _chartsData.isNotEmpty) return;
+    
+    _isLoadingExplore = true;
+    notifyListeners();
+    
+    try {
+      final exploreData = await _apiService.getExplore();
+      _exploreTrending = exploreData['trending'] ?? [];
+      _exploreNewReleases = exploreData['newReleases'] ?? [];
+    } catch (e) {
+      print("Error fetching explore data: $e");
+    }
+
+    try {
+      final charts = await _apiService.getCharts();
+      _chartsData = charts;
+    } catch (e) {
+      print("Error fetching charts data: $e");
+    }
+    
+    _isLoadingExplore = false;
+    notifyListeners();
+  }
+
+  Future<void> addToChannelHistory(Channel channel) async {
+    _channelHistory.removeWhere((c) => c.id == channel.id);
+    _channelHistory.insert(0, channel);
+    if (_channelHistory.length > 20) _channelHistory = _channelHistory.sublist(0, 20);
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setString('channelHistory', json.encode(_channelHistory.map((c) => c.toJson()).toList()));
+  }
+
+  Future<void> clearChannelHistory() async {
+    _channelHistory.clear();
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    prefs.remove('channelHistory');
+  }
+
+  Future<void> removeChannelHistory(String channelId) async {
+    _channelHistory.removeWhere((c) => c.id == channelId);
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setString('channelHistory', json.encode(_channelHistory.map((c) => c.toJson()).toList()));
+  }
+
   void clearSuggestions() {
     _suggestions = [];
     notifyListeners();
   }
 
   Future<void> playTrack(Track track) async {
+    _suggestions = [];
+    notifyListeners();
     _currentTrack = track;
     _saveCurrentTrack(); // Save track for persistence
     
@@ -240,7 +324,7 @@ class MusicProvider with ChangeNotifier {
     if (_recentlyPlayed.length > 20) {
       _recentlyPlayed = _recentlyPlayed.take(20).toList();
     }
-    _saveRecentlyPlayed();
+    _apiService.addToHistory(track); // Save track to backend history
 
     // Update _currentIndex only if track is in _searchResults (don't override if caller already set it)
     final idx = _searchResults.indexOf(track);
@@ -376,8 +460,8 @@ class MusicProvider with ChangeNotifier {
     _currentTrack = null;
     
     // Remove from saved preferences
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('currentTrack');
+    await _apiService.updateSetting('currentTrack', '');
+    
     
     notifyListeners();
   }

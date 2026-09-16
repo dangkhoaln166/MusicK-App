@@ -81,9 +81,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                   showDialog(
                     context: context,
                     builder: (ctx) => EditPlaylistDialog(
-                      playlistId: playlist.id,
-                      currentName: playlist.name,
-                      currentCoverUrl: playlist.customCoverImage,
+                      playlist: playlist,
                       musicProvider: musicProvider,
                     ),
                   );
@@ -286,17 +284,13 @@ class PlaylistDetailScreen extends StatelessWidget {
 }
 
 class EditPlaylistDialog extends StatefulWidget {
-  final String playlistId;
-  final String currentName;
-  final String? currentCoverUrl;
+  final Playlist playlist;
   final MusicProvider musicProvider;
 
   const EditPlaylistDialog({
     Key? key,
-    required this.playlistId,
-    required this.currentName,
+    required this.playlist,
     required this.musicProvider,
-    this.currentCoverUrl,
   }) : super(key: key);
 
   @override
@@ -307,12 +301,14 @@ class _EditPlaylistDialogState extends State<EditPlaylistDialog> {
   late TextEditingController _nameController;
   late TextEditingController _coverController;
   bool _isUploading = false;
+  bool _isLocked = false;
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.currentName);
-    _coverController = TextEditingController(text: widget.currentCoverUrl ?? '');
+    _nameController = TextEditingController(text: widget.playlist.name);
+    _coverController = TextEditingController(text: widget.playlist.customCoverImage ?? '');
+    _isLocked = widget.playlist.customCoverImage != null && widget.playlist.customCoverImage!.isNotEmpty;
   }
 
   @override
@@ -425,7 +421,27 @@ class _EditPlaylistDialogState extends State<EditPlaylistDialog> {
               ),
               onChanged: (val) {
                 // Trigger rebuild to update image preview
-                setState(() {});
+                setState(() {
+                  _isLocked = val.isNotEmpty;
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              title: const Text("Khóa ảnh bìa này", style: TextStyle(color: Colors.white)),
+              subtitle: const Text("Không thay đổi bìa khi thêm bài hát mới", style: TextStyle(color: Colors.white54, fontSize: 12)),
+              value: _isLocked,
+              activeColor: Colors.blueAccent,
+              contentPadding: EdgeInsets.zero,
+              onChanged: (val) {
+                setState(() {
+                  _isLocked = val;
+                  if (_isLocked) {
+                    _coverController.text = widget.playlist.coverImage ?? '';
+                  } else {
+                    _coverController.text = '';
+                  }
+                });
               },
             ),
           ],
@@ -438,7 +454,7 @@ class _EditPlaylistDialogState extends State<EditPlaylistDialog> {
         ),
         ElevatedButton(
           onPressed: () {
-            widget.musicProvider.updatePlaylist(widget.playlistId, _nameController.text, _coverController.text);
+            widget.musicProvider.updatePlaylist(widget.playlist.id, _nameController.text, _coverController.text);
             Navigator.pop(context);
           },
           style: ElevatedButton.styleFrom(

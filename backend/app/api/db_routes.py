@@ -158,4 +158,55 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     # Build full URL
     base_url = str(request.base_url).rstrip("/")
     url = f"{base_url}/api/downloads/covers/{filename}"
-    return {"url": url}
+    return {"status": "success", "url": url}
+
+@router.get("/history", response_model=List[schemas.Track])
+def get_history(db: Session = Depends(get_db)):
+    history_entries = db.query(models.History).order_by(models.History.played_at.desc()).limit(20).all()
+    return [entry.track for entry in history_entries]
+
+@router.post("/history", response_model=schemas.Track)
+def add_to_history(track: schemas.TrackCreate, db: Session = Depends(get_db)):
+    create_track_if_not_exists(db, track)
+    # Remove existing entry if it exists to update played_at
+    existing = db.query(models.History).filter(models.History.track_id == track.video_id).first()
+    if existing:
+        db.delete(existing)
+    
+    new_entry = models.History(track_id=track.video_id)
+    db.add(new_entry)
+    
+    # Enforce limit of 20
+    db.commit()
+    history = db.query(models.History).order_by(models.History.played_at.desc()).all()
+    if len(history) > 20:
+        for entry in history[20:]:
+            db.delete(entry)
+        db.commit()
+        
+    return track
+
+@router.delete("/history/{video_id}")
+def remove_from_history(video_id: str, db: Session = Depends(get_db)):
+    entry = db.query(models.History).filter(models.History.track_id == video_id).first()
+    if entry:
+        db.delete(entry)
+        db.commit()
+    return {"status": "success"}
+
+@router.get("/settings")
+def get_settings(db: Session = Depends(get_db)):
+    settings = db.query(models.Setting).all()
+    return {s.key: s.value for s in settings}
+
+@router.post("/settings")
+def update_settings(settings: dict, db: Session = Depends(get_db)):
+    for key, value in settings.items():
+        db_setting = db.query(models.Setting).filter(models.Setting.key == key).first()
+        if db_setting:
+            db_setting.value = str(value)
+        else:
+            db_setting = models.Setting(key=key, value=str(value))
+            db.add(db_setting)
+    db.commit()
+    return {"status": "success"}

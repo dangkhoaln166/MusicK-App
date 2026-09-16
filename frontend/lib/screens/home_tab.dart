@@ -9,6 +9,7 @@ import '../widgets/resizable_banner.dart';
 import '../services/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
+import '../widgets/hover_scale_card.dart';
 import 'player_screen.dart';
 import 'playlist_detail_screen.dart';
 
@@ -604,38 +605,6 @@ class _HomeTabState extends State<HomeTab> {
           },
         );
       },
-    );
-  }
-}
-
-class HoverScaleCard extends StatefulWidget {
-  final Widget child;
-  const HoverScaleCard({Key? key, required this.child}) : super(key: key);
-
-  @override
-  _HoverScaleCardState createState() => _HoverScaleCardState();
-}
-
-class _HoverScaleCardState extends State<HoverScaleCard> {
-  bool _isPressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _isPressed = true),
-      onExit: (_) => setState(() => _isPressed = false),
-      child: GestureDetector(
-        onTapDown: (_) => setState(() => _isPressed = true),
-        onTapUp: (_) => setState(() => _isPressed = false),
-        onTapCancel: () => setState(() => _isPressed = false),
-        child: AnimatedScale(
-          scale: _isPressed ? 0.96 : 1.0,
-          duration: const Duration(milliseconds: 100),
-          curve: Curves.easeOut,
-          child: RepaintBoundary(child: widget.child),
-        ),
-      ),
     );
   }
 }

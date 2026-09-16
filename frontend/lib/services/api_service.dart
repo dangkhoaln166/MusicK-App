@@ -2,21 +2,73 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/track.dart';
 import '../models/playlist.dart';
+import '../models/channel.dart';
 
 class ApiService {
   // Use 10.0.2.2 for Android emulator to access host localhost
   // Use 127.0.0.1 instead of localhost to prevent IPv4/IPv6 resolution issues on Windows
   static const String baseUrl = 'http://127.0.0.1:8000/api';
 
-  Future<List<Track>> searchTracks(String query, {int page = 1}) async {
+  Future<Map<String, dynamic>> searchAll(String query, {int page = 1}) async {
     final response = await http.get(Uri.parse('$baseUrl/search?q=$query&page=$page'));
     
     if (response.statusCode == 200) {
-      final data = json.decode(response.body);
+      final data = json.decode(utf8.decode(response.bodyBytes));
+      final List results = data['results'] ?? [];
+      final List channelsData = data['channels'] ?? [];
+      
+      return {
+        'tracks': results.map((json) => Track.fromJson(json)).toList(),
+        'channels': channelsData.map((json) => Channel.fromJson(json)).toList(),
+      };
+    } else {
+      throw Exception('Failed to load search results');
+    }
+  }
+
+  Future<List<Track>> getChannelVideos(String channelId, {String sortBy = 'p', int page = 1}) async {
+    final response = await http.get(Uri.parse('$baseUrl/channels/$channelId/videos?sort_by=$sortBy&page=$page'));
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(utf8.decode(response.bodyBytes));
       final List results = data['results'] ?? [];
       return results.map((json) => Track.fromJson(json)).toList();
     } else {
-      throw Exception('Failed to load search results');
+      throw Exception('Failed to load channel videos');
+    }
+  }
+
+  Future<Map<String, List<Track>>> getExplore() async {
+    final response = await http.get(Uri.parse('$baseUrl/explore'));
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(utf8.decode(response.bodyBytes));
+      final List trendingData = data['trending'] ?? [];
+      final List newReleasesData = data['new_releases'] ?? [];
+      
+      return {
+        'trending': (trendingData as List).map((json) => Track.fromJson(Map<String, dynamic>.from(json as Map))).toList(),
+        'newReleases': (newReleasesData as List).map((json) => Track.fromJson(Map<String, dynamic>.from(json as Map))).toList(),
+      };
+    } else {
+      throw Exception('Failed to load explore data');
+    }
+  }
+
+  Future<Map<String, List<Track>>> getCharts() async {
+    final response = await http.get(Uri.parse('$baseUrl/charts'));
+    
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+      Map<String, List<Track>> charts = {};
+      data.forEach((key, value) {
+        if (value is List) {
+          charts[key] = value.map((json) => Track.fromJson(Map<String, dynamic>.from(json as Map))).toList();
+        }
+      });
+      return charts;
+    } else {
+      throw Exception('Failed to load charts data');
     }
   }
 
@@ -99,6 +151,53 @@ class ApiService {
 
   Future<void> removeFavorite(String videoId) async {
     await http.delete(Uri.parse('$baseUrl/db/favorites/$videoId'));
+  }
+
+  // History & Settings
+  Future<List<Track>> getHistory() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/db/history'));
+      if (response.statusCode == 200) {
+        final List data = json.decode(response.body);
+        return data.map((json) => Track.fromJson(json)).toList();
+      }
+    } catch(e) {
+      print("getHistory error: $e");
+    }
+    return [];
+  }
+
+  Future<void> addToHistory(Track track) async {
+    await http.post(
+      Uri.parse('$baseUrl/db/history'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(track.toJson()),
+    );
+  }
+
+  Future<Map<String, String>> getSettings() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/db/settings'));
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        Map<String, String> settings = {};
+        data.forEach((key, value) {
+          settings[key] = value?.toString() ?? '';
+        });
+        return settings;
+      }
+    } catch(e) {
+      print("getSettings error: $e");
+    }
+    return {};
+  }
+
+  Future<void> updateSetting(String key, String value) async {
+    await http.post(
+      Uri.parse('$baseUrl/db/settings'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'key': key, 'value': value}),
+    );
   }
 
   Future<List<Playlist>> getPlaylists() async {

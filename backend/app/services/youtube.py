@@ -4,6 +4,7 @@ import json
 from urllib.parse import quote
 from typing import List, Dict, Any, Optional
 import os
+import re
 import threading
 
 from ytmusicapi import YTMusic
@@ -33,7 +34,45 @@ def _run_with_timeout(func, args=(), kwargs={}, timeout_secs=30):
         raise exc[0]
     return result[0]
 
-def extract_search_results(query: str, max_results: int = 15) -> List[Dict[str, Any]]:
+def extract_channels(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
+    url = f"https://www.youtube.com/results?search_query={quote(query)}&sp=EgIQAg%253D%253D"
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+    try:
+        html = urllib.request.urlopen(req).read().decode('utf-8')
+        match = re.search(r'ytInitialData\s*=\s*({.*?});', html)
+        if match:
+            data = json.loads(match.group(1))
+            channels = []
+            contents = data.get('contents', {}).get('twoColumnSearchResultsRenderer', {}).get('primaryContents', {}).get('sectionListRenderer', {}).get('contents', [])
+            for content in contents:
+                items = content.get('itemSectionRenderer', {}).get('contents', [])
+                for item in items:
+                    channel = item.get('channelRenderer')
+                    if channel:
+                        title = channel.get('title', {}).get('simpleText')
+                        channel_id = channel.get('channelId')
+                        subscribers = channel.get('subscriberCountText', {}).get('simpleText')
+                        thumbnails = channel.get('thumbnail', {}).get('thumbnails', [])
+                        avatar = thumbnails[-1].get('url') if thumbnails else None
+                        if avatar and avatar.startswith('//'):
+                            avatar = 'https:' + avatar
+                        
+                        channels.append({
+                            "channel_id": channel_id,
+                            "title": title,
+                            "subscribers": subscribers,
+                            "avatar": avatar
+                        })
+                        if len(channels) >= max_results:
+                            return channels
+            return channels
+    except Exception as e:
+        print(f"Error scraping channels: {e}")
+    return []
+
+def extract_search_results(query: str, max_results: int = 15) -> Dict[str, Any]:
+    channels = extract_channels(query, max_results=2)
+    
     # Search specifically for 'songs' to get Official Audio instead of Music Videos with cinematic intros.
     # This guarantees perfect synchronization with LrcLib lyrics.
     results = ytmusic.search(query, filter="songs", limit=max_results)
@@ -65,6 +104,73 @@ def extract_search_results(query: str, max_results: int = 15) -> List[Dict[str, 
                 "channel": channel
             })
             
+    return {"channels": channels, "tracks": formatted_results}
+
+def get_channel_videos(channel_id: str, sort_by: str = 'p', page: int = 1, limit: int = 30) -> List[Dict[str, Any]]:
+    path = "popular" if sort_by == 'p' else "videos"
+    url = f"https://www.youtube.com/channel/{channel_id}/{path}"
+    start_idx = (page - 1) * limit + 1
+    end_idx = page * limit
+    ydl_opts = {
+        'extract_flat': True,
+        'quiet': True,
+        'playlist_items': f'{start_idx}-{end_idx}'
+    }
+    
+    entries = []
+    channel_name = "Channel"
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            entries = info.get('entries', [])
+            channel_name = info.get('uploader') or info.get('channel') or "Channel"
+    except Exception as e:
+        if sort_by == 'p' and "does not have a popular tab" in str(e):
+            # Fallback to manual sorting of the latest videos
+            url = f"https://www.youtube.com/channel/{channel_id}/videos"
+            ydl_opts['playlist_items'] = '1-200' # Fetch a large pool to sort
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                raw_entries = info.get('entries', [])
+                channel_name = info.get('uploader') or info.get('channel') or "Channel"
+                
+                # Sort manually by view count
+                sorted_entries = sorted(
+                    raw_entries,
+                    key=lambda x: x.get('view_count') or 0,
+                    reverse=True
+                )
+                
+                # Paginate locally
+                start_i = (page - 1) * limit
+                end_i = page * limit
+                entries = sorted_entries[start_i:end_i]
+        else:
+            raise e
+            
+    formatted_results = []
+    for entry in entries:
+        title = entry.get('title')
+        video_id = entry.get('id')
+        if not video_id:
+            continue
+            
+        thumbnails = entry.get('thumbnails', [])
+        best_thumb = thumbnails[-1].get('url') if thumbnails else None
+        
+        duration_secs = entry.get('duration')
+        duration_str = ""
+        if duration_secs:
+            duration_str = f"{int(duration_secs)//60}:{int(duration_secs)%60:02d}"
+            
+        formatted_results.append({
+            "video_id": video_id,
+            "title": f"{title} - {channel_name}",
+            "duration": duration_str,
+            "thumbnail": best_thumb,
+            "channel": channel_name
+        })
     return formatted_results
 
 def _do_extract_stream_urls(video_id: str) -> Dict[str, Optional[str]]:
@@ -237,3 +343,94 @@ def download_audio_background(video_id: str):
     except Exception as e:
         print(f"Failed to download audio for {video_id}: {e}")
 
+def get_explore() -> Dict[str, List[Dict[str, Any]]]:
+    try:
+        explore_data = ytmusic.get_explore()
+    except Exception as e:
+        print(f"Error fetching explore data: {e}")
+        return {"trending": [], "new_releases": []}
+    
+    def parse_items(key: str) -> List[Dict[str, Any]]:
+        results = []
+        if key in explore_data and 'items' in explore_data[key]:
+            for item in explore_data[key]['items']:
+                video_id = item.get('videoId')
+                if not video_id:
+                    continue
+                
+                artists = item.get('artists', [])
+                channel = artists[0].get('name') if artists else "Unknown Artist"
+                
+                thumbnails = item.get('thumbnails', [])
+                best_thumb = thumbnails[-1].get('url') if thumbnails else None
+                
+                title = item.get('title', '')
+                
+                results.append({
+                    "video_id": video_id,
+                    "title": f"{title} - {channel}" if channel else title,
+                    "duration": None,
+                    "thumbnail": best_thumb,
+                    "channel": channel
+                })
+        return results
+
+    return {
+        "trending": parse_items('trending'),
+        "new_releases": parse_items('new_videos')
+    }
+
+def get_global_charts() -> Dict[str, List[Dict[str, Any]]]:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    playlists = {
+        "Global": "PL4fGSI1pDJn5kI81J1fYWK5eZRl1zJ5kM",
+        "VN": "PL4fGSI1pDJn4FPCRZtojwqQro5GPY6cuV",
+        "US": "PL4fGSI1pDJn69On1f-8NAvX_CYlx7QyZc",
+        "KR": "PL4fGSI1pDJn5S09aId3dUGp40ygUqmPGc",
+        "UK": "PL4fGSI1pDJn688ebB8czINn0_nov50e3A"
+    }
+    
+    def fetch_playlist(country, playlist_id):
+        try:
+            pl = ytmusic.get_playlist(playlist_id, limit=20)
+            tracks = []
+            for track in pl.get('tracks', [])[:20]:
+                video_id = track.get('videoId')
+                if not video_id:
+                    continue
+                
+                artists = track.get('artists', [])
+                channel = artists[0].get('name') if artists else "Unknown Artist"
+                title = track.get('title', '')
+                
+                thumbnails = track.get('thumbnails', [])
+                best_thumb = thumbnails[-1].get('url') if thumbnails else None
+                
+                duration_parts = track.get('duration', '0:00').split(':')
+                duration_sec = 0
+                if len(duration_parts) == 2:
+                    duration_sec = int(duration_parts[0]) * 60 + int(duration_parts[1])
+                elif len(duration_parts) == 3:
+                    duration_sec = int(duration_parts[0]) * 3600 + int(duration_parts[1]) * 60 + int(duration_parts[2])
+                    
+                tracks.append({
+                    "video_id": video_id,
+                    "title": title,
+                    "duration": duration_sec,
+                    "thumbnail": best_thumb,
+                    "channel": channel
+                })
+            return country, tracks
+        except Exception as e:
+            print(f"Failed to fetch chart {country}: {e}")
+            return country, []
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(fetch_playlist, c, pid): c for c, pid in playlists.items()}
+        for future in as_completed(futures):
+            country, tracks = future.result()
+            results[country] = tracks
+            
+    return results

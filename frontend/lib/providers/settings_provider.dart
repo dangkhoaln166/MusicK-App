@@ -1,30 +1,42 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
 
 class SettingsProvider with ChangeNotifier {
   late bool _isDarkMode;
   late String _locale;
-  final SharedPreferences _prefs;
+  final ApiService _apiService = ApiService();
+  bool _isLoaded = false;
 
   bool get isDarkMode => _isDarkMode;
   String get locale => _locale;
+  bool get isLoaded => _isLoaded;
 
-  SettingsProvider(this._prefs) {
-    _isDarkMode = _prefs.getBool('isDarkMode') ?? true;
-    _locale = _prefs.getString('locale') ?? 'en';
+  SettingsProvider() {
+    _isDarkMode = true; // Default
+    _locale = 'en'; // Default
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final settings = await _apiService.getSettings();
+    _isDarkMode = (settings['isDarkMode'] ?? 'true') == 'true';
+    _locale = settings['locale'] ?? 'en';
+    _isLoaded = true;
+    notifyListeners();
   }
 
   void toggleTheme() async {
     _isDarkMode = !_isDarkMode;
     notifyListeners();
-    await _prefs.setBool('isDarkMode', _isDarkMode);
+    await _apiService.updateSetting('isDarkMode', _isDarkMode.toString());
   }
 
   void setLocale(String localeCode) async {
     if (_locale != localeCode) {
       _locale = localeCode;
       notifyListeners();
-      await _prefs.setString('locale', _locale);
+      await _apiService.updateSetting('locale', _locale);
     }
   }
 

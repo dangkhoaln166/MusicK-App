@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
+import '../models/track.dart';
 import '../screens/player_screen.dart';
 
 class MiniPlayer extends StatelessWidget {
@@ -19,8 +20,11 @@ class MiniPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final musicProvider = Provider.of<MusicProvider>(context);
-    final track = musicProvider.currentTrack;
+    final track = context.select<MusicProvider, Track?>((p) => p.currentTrack);
+    final loopMode = context.select<MusicProvider, LoopMode>((p) => p.loopMode);
+    final isCompleted = context.select<MusicProvider, bool>((p) => p.isCompleted);
+    final isPlaying = context.select<MusicProvider, bool>((p) => p.isPlaying);
+    final musicProvider = Provider.of<MusicProvider>(context, listen: false);
 
     if (track == null) return const SizedBox.shrink();
 

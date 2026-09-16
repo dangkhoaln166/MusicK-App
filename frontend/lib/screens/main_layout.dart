@@ -6,6 +6,7 @@ import '../widgets/mini_player.dart';
 import 'home_tab.dart';
 import 'search_tab.dart';
 import 'library_tab.dart';
+import 'trending_tab.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({Key? key}) : super(key: key);
@@ -19,13 +20,14 @@ class _MainLayoutState extends State<MainLayout> {
 
   final List<Widget> _pages = [
     const HomeTab(),
+    const TrendingTab(),
     const SearchTab(),
     const LibraryTab(),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final hasTrack = Provider.of<MusicProvider>(context).currentTrack != null;
+    final hasTrack = context.select<MusicProvider, bool>((p) => p.currentTrack != null);
     
     // Check if desktop width
     final isDesktop = MediaQuery.of(context).size.width > 800;
@@ -56,6 +58,11 @@ class _MainLayoutState extends State<MainLayout> {
                   selectedIcon: const Icon(Icons.home),
                   label: Text(Provider.of<SettingsProvider>(context).t('home')),
                 ),
+                const NavigationRailDestination(
+                  icon: Icon(Icons.local_fire_department_outlined),
+                  selectedIcon: Icon(Icons.local_fire_department),
+                  label: Text('Trending'),
+                ),
                 NavigationRailDestination(
                   icon: const Icon(Icons.search_outlined),
                   selectedIcon: const Icon(Icons.search),
@@ -67,11 +74,16 @@ class _MainLayoutState extends State<MainLayout> {
                   label: Text(Provider.of<SettingsProvider>(context).t('library')),
                 ),
               ],
-              trailing: Padding(
-                padding: const EdgeInsets.only(top: 24.0),
-                child: IconButton(
-                  icon: const Icon(Icons.settings, color: Colors.grey),
-                  onPressed: () => _showSettingsDialog(context),
+              trailing: Expanded(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 24.0),
+                    child: IconButton(
+                      icon: const Icon(Icons.settings, color: Colors.grey),
+                      onPressed: () => _showSettingsDialog(context),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -133,6 +145,11 @@ class _MainLayoutState extends State<MainLayout> {
                       icon: const Icon(Icons.home_outlined),
                       activeIcon: const Icon(Icons.home),
                       label: Provider.of<SettingsProvider>(context).t('home'),
+                    ),
+                    const BottomNavigationBarItem(
+                      icon: Icon(Icons.local_fire_department_outlined),
+                      activeIcon: Icon(Icons.local_fire_department),
+                      label: 'Trending',
                     ),
                     BottomNavigationBarItem(
                       icon: const Icon(Icons.search_outlined),
