@@ -18,6 +18,7 @@ class Track(TrackBase):
 
 class PlaylistBase(BaseModel):
     name: str
+    cover_image: Optional[str] = None
 
 class PlaylistCreate(PlaylistBase):
     pass

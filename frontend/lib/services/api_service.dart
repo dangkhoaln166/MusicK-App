@@ -5,7 +5,7 @@ import '../models/playlist.dart';
 
 class ApiService {
   // Use 10.0.2.2 for Android emulator to access host localhost
-  // Use localhost for iOS simulator or Desktop
+  // Use 127.0.0.1 instead of localhost to prevent IPv4/IPv6 resolution issues on Windows
   static const String baseUrl = 'http://127.0.0.1:8000/api';
 
   Future<List<Track>> searchTracks(String query, {int page = 1}) async {
@@ -44,14 +44,34 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>?> getLyrics(String query) async {
-    final response = await http.get(Uri.parse('$baseUrl/lyrics?q=$query'));
-    
+    final response = await http.get(Uri.parse('$baseUrl/lyrics?q=${Uri.encodeComponent(query)}'));
     if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return data['lyrics'];
-    } else {
-      return null;
+      return json.decode(response.body)['lyrics'];
     }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> translateLyrics(String lyrics, {String targetLang = 'vi'}) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/translate_lyrics'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'lyrics': lyrics,
+          'target_lang': targetLang,
+        }),
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(utf8.decode(response.bodyBytes));
+        return {
+          'translated': data['translated'] ?? '',
+          'romaji': data['romaji'] ?? '',
+        };
+      }
+    } catch (e) {
+      print("translateLyrics error: $e");
+    }
+    return null;
   }
 
   // --- Database API ---
@@ -110,11 +130,11 @@ class ApiService {
     await http.delete(Uri.parse('$baseUrl/db/playlists/$id'));
   }
 
-  Future<void> renamePlaylist(String id, String newName) async {
+  Future<void> updatePlaylist(String id, String newName, String? newCoverImage) async {
     await http.put(
       Uri.parse('$baseUrl/db/playlists/$id'),
       headers: {'Content-Type': 'application/json'},
-      body: json.encode({'name': newName}),
+      body: json.encode({'name': newName, 'cover_image': newCoverImage}),
     );
   }
 
@@ -128,5 +148,40 @@ class ApiService {
 
   Future<void> removeTrackFromPlaylist(String playlistId, String videoId) async {
     await http.delete(Uri.parse('$baseUrl/db/playlists/$playlistId/tracks/$videoId'));
+  }
+
+  Future<bool> updateThumbnail(String videoId, String imageUrl) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/db/tracks/$videoId/thumbnail'),
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: {'image_url': imageUrl},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Error updating thumbnail: $e');
+      return false;
+    }
+  }
+
+  Future<String?> uploadImage(List<int> bytes, String filename) async {
+    try {
+      var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/db/upload_image'));
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: filename,
+      ));
+      
+      var response = await request.send();
+      if (response.statusCode == 200) {
+        var responseData = await response.stream.bytesToString();
+        var jsonResponse = json.decode(responseData);
+        return jsonResponse['url'];
+      }
+    } catch (e) {
+      print('Error uploading image: $e');
+    }
+    return null;
   }
 }

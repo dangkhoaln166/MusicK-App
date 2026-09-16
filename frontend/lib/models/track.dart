@@ -1,7 +1,7 @@
 class Track {
   final String videoId;
   final String title;
-  final String? thumbnail;
+  String? thumbnail;
   final int? duration;
   final String? channel;
 

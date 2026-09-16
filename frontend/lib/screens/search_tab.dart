@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../providers/music_provider.dart';
+import '../providers/settings_provider.dart';
 import '../utils/custom_toast.dart';
 import 'player_screen.dart';
 
@@ -95,13 +96,19 @@ class _SearchTabState extends State<SearchTab> {
   @override
   Widget build(BuildContext context) {
     final musicProvider = Provider.of<MusicProvider>(context);
+    final settings = Provider.of<SettingsProvider>(context);
+    final isDark = settings.isDarkMode;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final bgColor = isDark ? Colors.black : Colors.white;
+    final searchBgColor = isDark ? Colors.grey.shade900 : Colors.grey.shade100;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: bgColor,
       appBar: AppBar(
-        title: const Text('MusicK', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-        backgroundColor: Colors.black,
+        title: Text('MusicK', style: TextStyle(fontWeight: FontWeight.bold, color: textColor)),
+        backgroundColor: bgColor,
         elevation: 0,
+        iconTheme: IconThemeData(color: textColor),
       ),
       body: Column(
         children: [
@@ -110,7 +117,7 @@ class _SearchTabState extends State<SearchTab> {
             padding: const EdgeInsets.all(16.0),
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.grey.shade900,
+                color: searchBgColor,
                 borderRadius: BorderRadius.circular(30),
               ),
               child: Row(
@@ -118,12 +125,12 @@ class _SearchTabState extends State<SearchTab> {
                   Expanded(
                     child: TextField(
                       controller: _searchController,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        hintText: 'Search songs, artists, or links...',
-                        hintStyle: TextStyle(color: Colors.grey),
+                      style: TextStyle(color: textColor),
+                      decoration: InputDecoration(
+                        hintText: settings.t('search_placeholder'),
+                        hintStyle: const TextStyle(color: Colors.grey),
                         border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                       ),
                       onChanged: _onSearchChanged,
                       onSubmitted: _performSearch,
@@ -158,7 +165,7 @@ class _SearchTabState extends State<SearchTab> {
                       final suggestion = musicProvider.suggestions[index];
                       return ListTile(
                         leading: const Icon(Icons.search, color: Colors.grey),
-                        title: Text(suggestion, style: const TextStyle(color: Colors.white)),
+                        title: Text(suggestion, style: TextStyle(color: textColor)),
                         onTap: () => _performSearch(suggestion),
                       );
                     },
@@ -182,12 +189,23 @@ class _SearchTabState extends State<SearchTab> {
                             leading: ClipRRect(
                               borderRadius: BorderRadius.circular(8),
                               child: track.thumbnail != null
-                                  ? Image.network(track.thumbnail!, width: 60, height: 60, fit: BoxFit.cover)
+                                  ? Image.network(
+                                      track.thumbnail!,
+                                      width: 60,
+                                      height: 60,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) => Container(
+                                        width: 60,
+                                        height: 60,
+                                        color: Colors.grey.shade800,
+                                        child: const Icon(Icons.music_note, color: Colors.white54),
+                                      ),
+                                    )
                                   : Container(width: 60, height: 60, color: Colors.grey.shade800),
                             ),
                             title: Text(
                               track.title,
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -198,6 +216,21 @@ class _SearchTabState extends State<SearchTab> {
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                IconButton(
+                                  icon: Icon(
+                                    musicProvider.isFavorite(track) ? Icons.favorite : Icons.favorite_border,
+                                    color: musicProvider.isFavorite(track) ? Colors.greenAccent : Colors.blueAccent,
+                                  ),
+                                  onPressed: () {
+                                    musicProvider.toggleFavorite(track);
+                                    CustomToast.show(
+                                      context,
+                                      musicProvider.isFavorite(track) ? settings.t('added_to_liked') : settings.t('removed_from_liked'),
+                                      icon: musicProvider.isFavorite(track) ? Icons.favorite : Icons.favorite_border,
+                                      color: musicProvider.isFavorite(track) ? Colors.greenAccent : (isDark ? Colors.white54 : Colors.black54),
+                                    );
+                                  },
+                                ),
                                 IconButton(
                                   icon: const Icon(Icons.playlist_play, color: Colors.blueAccent),
                                   onPressed: () {
@@ -234,11 +267,16 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   void _showAddToPlaylistSheet(BuildContext context, track) {
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
+    final isDark = settings.isDarkMode;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final bgColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+
     showDialog(
       context: context,
       builder: (context) {
         return Dialog(
-          backgroundColor: const Color(0xFF1E1E1E),
+          backgroundColor: bgColor,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           child: Container(
             width: 400,
@@ -251,9 +289,9 @@ class _SearchTabState extends State<SearchTab> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Add to Playlist', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                      Text('Add to Playlist', style: TextStyle(color: textColor, fontSize: 20, fontWeight: FontWeight.bold)),
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white54),
+                        icon: Icon(Icons.close, color: isDark ? Colors.white54 : Colors.black54),
                         onPressed: () => Navigator.pop(context),
                       ),
                     ],

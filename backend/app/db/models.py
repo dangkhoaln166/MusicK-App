@@ -25,6 +25,7 @@ class Playlist(Base):
 
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    cover_image = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     tracks = relationship("Track", secondary=playlist_track_association, back_populates="playlists")

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/playlist.dart';
 import '../providers/music_provider.dart';
+import '../services/api_service.dart';
+import '../utils/custom_toast.dart';
 import '../widgets/mini_player.dart';
 import 'player_screen.dart';
 
@@ -60,7 +63,11 @@ class PlaylistDetailScreen extends StatelessWidget {
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: playlist.coverImage != null
-                          ? Image.network(playlist.coverImage!, fit: BoxFit.cover)
+                          ? Image.network(
+                              playlist.coverImage!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => const Icon(Icons.album, color: Colors.white24, size: 80),
+                            )
                           : Container(color: Colors.grey.shade800, child: const Icon(Icons.music_note, size: 80, color: Colors.white54)),
                     ),
                   ),
@@ -71,36 +78,13 @@ class PlaylistDetailScreen extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.edit, color: Colors.white),
                 onPressed: () {
-                  final TextEditingController controller = TextEditingController(text: playlist.name);
                   showDialog(
                     context: context,
-                    builder: (ctx) => AlertDialog(
-                      backgroundColor: Colors.grey.shade900,
-                      title: const Text('Rename Playlist', style: TextStyle(color: Colors.white)),
-                      content: TextField(
-                        controller: controller,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: const InputDecoration(
-                          hintText: 'New Playlist Name',
-                          hintStyle: TextStyle(color: Colors.white24),
-                          enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
-                          focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
-                        ),
-                        autofocus: true,
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            musicProvider.renamePlaylist(playlist.id, controller.text);
-                            Navigator.pop(ctx);
-                          },
-                          child: const Text('Save', style: TextStyle(color: Colors.blueAccent)),
-                        ),
-                      ],
+                    builder: (ctx) => EditPlaylistDialog(
+                      playlistId: playlist.id,
+                      currentName: playlist.name,
+                      currentCoverUrl: playlist.customCoverImage,
+                      musicProvider: musicProvider,
                     ),
                   );
                 },
@@ -230,7 +214,18 @@ class PlaylistDetailScreen extends StatelessWidget {
                     leading: ClipRRect(
                       borderRadius: BorderRadius.circular(4),
                       child: track.thumbnail != null
-                          ? Image.network(track.thumbnail!, width: 50, height: 50, fit: BoxFit.cover)
+                          ? Image.network(
+                              track.thumbnail!,
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                width: 50,
+                                height: 50,
+                                color: Colors.grey.shade800,
+                                child: const Icon(Icons.music_note, color: Colors.white54),
+                              ),
+                            )
                           : Container(width: 50, height: 50, color: Colors.grey.shade800),
                     ),
                     title: Text(
@@ -243,7 +238,32 @@ class PlaylistDetailScreen extends StatelessWidget {
                       track.channel ?? 'Unknown Artist',
                       style: TextStyle(color: Colors.grey.shade400),
                     ),
-                    trailing: const Icon(Icons.play_arrow, color: Colors.white54),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Consumer<MusicProvider>(
+                          builder: (context, mp, _) {
+                            final isFav = mp.isFavorite(track);
+                            return IconButton(
+                              icon: Icon(
+                                isFav ? Icons.favorite : Icons.favorite_border,
+                                color: isFav ? Colors.greenAccent : Colors.white54,
+                              ),
+                              onPressed: () {
+                                mp.toggleFavorite(track);
+                                CustomToast.show(
+                                  context,
+                                  isFav ? 'Removed from Liked Songs' : 'Added to Liked Songs',
+                                  icon: isFav ? Icons.favorite_border : Icons.favorite,
+                                  color: isFav ? Colors.white54 : Colors.greenAccent,
+                                );
+                              },
+                            );
+                          },
+                        ),
+                        const Icon(Icons.play_arrow, color: Colors.white54),
+                      ],
+                    ),
                     onTap: () {
                       if (musicProvider.currentTrack?.videoId != track.videoId) {
                         musicProvider.playPlaylist(playlist.tracks, startIndex: index);
@@ -261,6 +281,173 @@ class PlaylistDetailScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class EditPlaylistDialog extends StatefulWidget {
+  final String playlistId;
+  final String currentName;
+  final String? currentCoverUrl;
+  final MusicProvider musicProvider;
+
+  const EditPlaylistDialog({
+    Key? key,
+    required this.playlistId,
+    required this.currentName,
+    required this.musicProvider,
+    this.currentCoverUrl,
+  }) : super(key: key);
+
+  @override
+  State<EditPlaylistDialog> createState() => _EditPlaylistDialogState();
+}
+
+class _EditPlaylistDialogState extends State<EditPlaylistDialog> {
+  late TextEditingController _nameController;
+  late TextEditingController _coverController;
+  bool _isUploading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.currentName);
+    _coverController = TextEditingController(text: widget.currentCoverUrl ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _coverController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    try {
+      List<PlatformFile> files = await FilePicker.pickFiles(
+        type: FileType.image,
+      );
+
+      if (files.isNotEmpty) {
+        setState(() {
+          _isUploading = true;
+        });
+        
+        final file = files.first;
+        final bytes = await file.readAsBytes();
+        
+        final url = await ApiService().uploadImage(bytes, file.name);
+        if (url != null) {
+            setState(() {
+              _coverController.text = url;
+            });
+            CustomToast.show(context, 'Image uploaded successfully!', color: Colors.greenAccent);
+          } else {
+            CustomToast.show(context, 'Failed to upload image', color: Colors.redAccent);
+          }
+      }
+    } catch (e) {
+      CustomToast.show(context, 'Error picking image', color: Colors.redAccent);
+    } finally {
+      setState(() {
+        _isUploading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.grey.shade900,
+      title: const Text('Edit Playlist', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Preview Image
+            Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white24),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: _coverController.text.isNotEmpty
+                  ? Image.network(_coverController.text, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.error, color: Colors.white54))
+                  : const Icon(Icons.image, size: 50, color: Colors.white24),
+            ),
+            const SizedBox(height: 16),
+            
+            // Upload Button
+            ElevatedButton.icon(
+              onPressed: _isUploading ? null : _pickAndUploadImage,
+              icon: _isUploading 
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.upload_file),
+              label: Text(_isUploading ? 'Uploading...' : 'Upload Image'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blueAccent,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+            
+            const SizedBox(height: 24),
+            
+            // Form Fields
+            TextField(
+              controller: _nameController,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Playlist Name',
+                labelStyle: const TextStyle(color: Colors.white70),
+                filled: true,
+                fillColor: Colors.black12,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.blueAccent)),
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _coverController,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Cover Image URL (Optional)',
+                labelStyle: const TextStyle(color: Colors.white70),
+                filled: true,
+                fillColor: Colors.black12,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.blueAccent)),
+              ),
+              onChanged: (val) {
+                // Trigger rebuild to update image preview
+                setState(() {});
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            widget.musicProvider.updatePlaylist(widget.playlistId, _nameController.text, _coverController.text);
+            Navigator.pop(context);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.greenAccent,
+            foregroundColor: Colors.black,
+          ),
+          child: const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ],
     );
   }
 }

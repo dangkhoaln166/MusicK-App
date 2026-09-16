@@ -9,6 +9,8 @@ import '../models/lyric_line.dart';
 import '../services/api_service.dart';
 import '../widgets/synced_lyrics_widget.dart';
 
+enum LyricsLanguage { original, romaji, translatedVi, translatedEn }
+
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({Key? key}) : super(key: key);
 
@@ -20,7 +22,12 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
   late AnimationController _animationController;
   Track? _cachedTrack;
   Future<Map<String, dynamic>?>? _lyricsFuture;
-  int _lyricOffset = 0;
+  
+  LyricsLanguage _lyricsLanguage = LyricsLanguage.original;
+  bool _isTranslating = false;
+  
+  // Cache for lyrics variations for current track
+  final Map<LyricsLanguage, Map<String, dynamic>> _lyricsCache = {};
 
   @override
   void initState() {
@@ -40,11 +47,18 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     final track = mp.currentTrack;
     if (track != null && track.videoId != _cachedTrack?.videoId) {
       _cachedTrack = track;
-      _lyricOffset = 0; // Reset offset on new track
-      _lyricsFuture = ApiService().getLyrics(track.title);
+      _lyricsCache.clear();
+      _lyricsLanguage = LyricsLanguage.original;
+      
+      _lyricsFuture = ApiService().getLyrics(track.title).then((data) {
+        if (data != null && mounted) {
+          _lyricsCache[LyricsLanguage.original] = data;
+        }
+        return data;
+      });
     }
   }
-
+  
   void _syncAnimation(bool isPlaying) {
     if (isPlaying && !_animationController.isAnimating) {
       _animationController.repeat();
@@ -141,7 +155,7 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
       children: [
         Expanded(
           flex: 4,
-          child: Center(child: _buildAlbumArt(track.thumbnail, imageSize)),
+          child: Center(child: _buildAlbumArt(track.thumbnail, imageSize, track)),
         ),
         Expanded(
           flex: 5,
@@ -156,140 +170,335 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     return Column(
       children: [
         const SizedBox(height: 20),
-        _buildAlbumArt(track.thumbnail, imageSize),
+        _buildAlbumArt(track.thumbnail, imageSize, track),
         const SizedBox(height: 20),
         Expanded(child: _buildLyricsView(track)),
       ],
     );
   }
 
-  Widget _buildLyricsView(Track track) {
-    return Column(
-      children: [
-        _buildSyncControls(),
-        const SizedBox(height: 10),
-        Expanded(
-          child: FutureBuilder<Map<String, dynamic>?>(
-            future: _lyricsFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator(color: Colors.white24));
+  void _showChangeCoverDialog(BuildContext context, Track track) {
+    final TextEditingController urlController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Thay đổi ảnh bìa', style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.grey.shade900,
+        content: TextField(
+          controller: urlController,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'Dán đường link ảnh (URL) vào đây...',
+            hintStyle: TextStyle(color: Colors.white54),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text('Hủy', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (urlController.text.isNotEmpty) {
+                final success = await ApiService().updateThumbnail(track.videoId, urlController.text);
+                if (success) {
+                  setState(() {
+                    track.thumbnail = urlController.text;
+                  });
+                  if (mounted) CustomToast.show(context, 'Cập nhật ảnh bìa thành công!');
+                } else {
+                  if (mounted) CustomToast.show(context, 'Có lỗi xảy ra!');
+                }
               }
+              if (mounted) Navigator.pop(c);
+            },
+            child: const Text('Lưu', style: TextStyle(color: Colors.blueAccent)),
+          ),
+        ],
+      ),
+    );
+  }
 
-        final data = snapshot.data;
-        if (data == null || (data['syncedLyrics'] == null && data['plainLyrics'] == null)) {
-          return const Center(child: Text("Lyrics not available", style: TextStyle(color: Colors.white54, fontSize: 18)));
-        }
+  Widget _buildLyricsView(Track track) {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _lyricsFuture,
+      builder: (context, snapshot) {
+        Widget content;
+        
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          content = const Center(child: CircularProgressIndicator(color: Colors.white24));
+        } else {
+          final originalData = snapshot.data;
+          if (originalData == null || (originalData['syncedLyrics'] == null && originalData['plainLyrics'] == null)) {
+            content = const Center(child: Text("Lyrics not available", style: TextStyle(color: Colors.white54, fontSize: 18)));
+          } else {
+            // Determine data to show based on language
+            var dataToShow = originalData;
+            if (_lyricsCache.containsKey(_lyricsLanguage)) {
+              dataToShow = _lyricsCache[_lyricsLanguage]!;
+            }
 
-        if (data['syncedLyrics'] != null) {
-          final lines = LyricLine.parseLrc(data['syncedLyrics']);
-          if (lines.isNotEmpty) {
-            return SyncedLyricsWidget(lyrics: lines, offset: _lyricOffset);
-          }
-        }
-
+            if (dataToShow['syncedLyrics'] != null && dataToShow['syncedLyrics'].toString().trim().isNotEmpty) {
+              final lines = LyricLine.parseLrc(dataToShow['syncedLyrics']);
+              if (lines.isNotEmpty) {
+                content = SyncedLyricsWidget(lyrics: lines);
+              } else {
+                content = const Center(child: Text("Invalid synced lyrics", style: TextStyle(color: Colors.white54, fontSize: 18)));
+              }
+            } else {
               // Fallback to plain lyrics
-              return SingleChildScrollView(
+              content = SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
                 child: Text(
-                  data['plainLyrics'] ?? '',
+                  dataToShow['plainLyrics'] ?? '',
                   style: const TextStyle(fontSize: 20, height: 2.0, color: Colors.white70),
                   textAlign: TextAlign.center,
                 ),
               );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSyncControls() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.timer_outlined, color: Colors.white54, size: 16),
-          const SizedBox(width: 8),
-          _syncButton('-5s', -5000),
-          _syncButton('-1s', -1000),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              "Sync: ${_lyricOffset > 0 ? '+' : ''}${_lyricOffset / 1000}s",
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            }
+          }
+        }
+        
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            content,
+            Positioned(
+              top: 16,
+              right: 16,
+              child: _buildLanguageToggleBtn(),
             ),
-          ),
-          _syncButton('+1s', 1000),
-          _syncButton('+5s', 5000),
-        ],
-      ),
-    );
-  }
-
-  Widget _syncButton(String label, int amount) {
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _lyricOffset += amount;
-        });
+          ],
+        );
       },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        child: Text(label, style: const TextStyle(color: Colors.blueAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildLanguageToggleBtn() {
+    String label = 'Gốc';
+    if (_lyricsLanguage == LyricsLanguage.romaji) label = 'Latin';
+    if (_lyricsLanguage == LyricsLanguage.translatedVi) label = 'Tiếng Việt';
+    if (_lyricsLanguage == LyricsLanguage.translatedEn) label = 'Tiếng Anh';
+
+    final originalData = _lyricsCache[LyricsLanguage.original];
+    final lang = originalData?['lang'] ?? 'unknown';
+
+    List<PopupMenuEntry<LyricsLanguage>> menuItems = [
+      const PopupMenuItem<LyricsLanguage>(
+        value: LyricsLanguage.original,
+        child: Text('Gốc (Original)', style: TextStyle(color: Colors.white)),
+      ),
+    ];
+
+    if (lang == 'vi') {
+      menuItems.add(const PopupMenuItem<LyricsLanguage>(
+        value: LyricsLanguage.translatedEn,
+        child: Text('Dịch sang Tiếng Anh', style: TextStyle(color: Colors.white)),
+      ));
+    } else if (lang == 'en') {
+      menuItems.add(const PopupMenuItem<LyricsLanguage>(
+        value: LyricsLanguage.translatedVi,
+        child: Text('Dịch sang Tiếng Việt', style: TextStyle(color: Colors.white)),
+      ));
+    } else {
+      menuItems.add(const PopupMenuItem<LyricsLanguage>(
+        value: LyricsLanguage.romaji,
+        child: Text('Latin (Romaji/Pinyin)', style: TextStyle(color: Colors.white)),
+      ));
+      menuItems.add(const PopupMenuItem<LyricsLanguage>(
+        value: LyricsLanguage.translatedVi,
+        child: Text('Dịch sang Tiếng Việt', style: TextStyle(color: Colors.white)),
+      ));
+      menuItems.add(const PopupMenuItem<LyricsLanguage>(
+        value: LyricsLanguage.translatedEn,
+        child: Text('Dịch sang Tiếng Anh', style: TextStyle(color: Colors.white)),
+      ));
+    }
+
+    return PopupMenuButton<LyricsLanguage>(
+      color: Colors.grey.shade900,
+      offset: const Offset(0, -120),
+      onSelected: (LyricsLanguage result) async {
+        if (_lyricsLanguage == result) return;
+
+        if (_lyricsCache[LyricsLanguage.original] == null || _lyricsCache[LyricsLanguage.original]?['syncedLyrics'] == null) {
+          if (mounted) CustomToast.show(context, 'Chưa có lời bài hát để dịch');
+          return;
+        }
+
+        if (result == LyricsLanguage.original || _lyricsCache.containsKey(result)) {
+          setState(() {
+            _lyricsLanguage = result;
+          });
+          return;
+        }
+
+        // Need to translate
+        setState(() {
+          _isTranslating = true;
+        });
+
+        String targetLang = 'vi';
+        if (result == LyricsLanguage.translatedEn) targetLang = 'en';
+
+        final originalLrc = _lyricsCache[LyricsLanguage.original]!['syncedLyrics'];
+        final res = await ApiService().translateLyrics(originalLrc, targetLang: targetLang);
+        
+        if (res != null && mounted) {
+          final originalData = _lyricsCache[LyricsLanguage.original]!;
+          
+          final transKey = targetLang == 'en' ? LyricsLanguage.translatedEn : LyricsLanguage.translatedVi;
+          
+          bool translationSuccess = res['translated'] != null && res['translated'].toString().trim().isNotEmpty;
+          
+          if (translationSuccess) {
+            _lyricsCache[transKey] = {
+              'plainLyrics': originalData['plainLyrics'],
+              'syncedLyrics': res['translated']
+            };
+          }
+          
+          if (res['romaji'] != null && res['romaji'].toString().trim().isNotEmpty) {
+            _lyricsCache[LyricsLanguage.romaji] = {
+              'plainLyrics': originalData['plainLyrics'],
+              'syncedLyrics': res['romaji']
+            };
+          }
+          
+          if (result == transKey && !translationSuccess) {
+            if (mounted) {
+              CustomToast.show(context, 'Lỗi khi dịch lời bài hát (Google Translate quá tải, thử lại sau)');
+              setState(() {
+                _isTranslating = false;
+              });
+            }
+            return;
+          }
+          
+          setState(() {
+            _lyricsLanguage = result;
+            _isTranslating = false;
+          });
+        } else {
+          if (mounted) {
+            CustomToast.show(context, 'Lỗi khi dịch lời bài hát (có thể quá tải, thử lại sau)');
+            setState(() {
+              _isTranslating = false;
+            });
+          }
+        }
+      },
+      itemBuilder: (BuildContext context) => menuItems,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black45,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white24, width: 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.translate, size: 16, color: Colors.white70),
+            const SizedBox(width: 6),
+            _isTranslating 
+              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70))
+              : Text(
+                  label,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500),
+                ),
+            const SizedBox(width: 4),
+            const Icon(Icons.arrow_drop_down, size: 16, color: Colors.white70),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildAlbumArt(String? thumbnailUrl, double size) {
-    return Container(
-      height: size,
-      width: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.6),
-            blurRadius: 30,
-            offset: const Offset(0, 15),
-          ),
-        ],
-      ),
-      child: RepaintBoundary(
-        child: RotationTransition(
-          turns: _animationController,
-          child: Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.black54, width: 8),
-              image: DecorationImage(
-                image: thumbnailUrl != null
-                  ? NetworkImage(thumbnailUrl)
-                  : const AssetImage('assets/placeholder.png') as ImageProvider,
-                fit: BoxFit.cover,
-              ),
+  Widget _buildAlbumArt(String? url, double size, Track track) {
+    // Upscale the thumbnail URL from 120x120 to 800x800 for the player screen
+    final highResUrl = url?.replaceAll(RegExp(r'=w\d+-h\d+'), '=w800-h800');
+
+    return GestureDetector(
+      onLongPress: () => _showChangeCoverDialog(context, track),
+      child: Container(
+        height: size,
+        width: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.6),
+              blurRadius: 30,
+              offset: const Offset(0, 15),
             ),
-            child: Center(
-              child: Container(
-                height: size * 0.15,
-                width: size * 0.15,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.black87,
-                  border: Border.all(color: Colors.white24, width: 2),
+          ],
+        ),
+        child: RepaintBoundary(
+          child: RotationTransition(
+            turns: _animationController,
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.black54, width: 8),
+                color: Colors.grey.shade900,
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipOval(
+                    child: highResUrl != null
+                        ? Image.network(
+                            highResUrl,
+                            width: size,
+                            height: size,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => url != null 
+                              ? Image.network(
+                                  url,
+                                  width: size,
+                                  height: size,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) => Container(
+                                    width: size,
+                                    height: size,
+                                    color: Colors.grey.shade800,
+                                    child: const Icon(Icons.music_note, color: Colors.white54, size: 120),
+                                  ),
+                                )
+                              : Container(
+                                  width: size,
+                                  height: size,
+                                  color: Colors.grey.shade800,
+                                  child: const Icon(Icons.music_note, color: Colors.white54, size: 120),
+                                ),
+                          )
+                        : Container(
+                            width: size,
+                            height: size,
+                            color: Colors.grey.shade800,
+                            child: const Icon(Icons.music_note, color: Colors.white54, size: 120),
+                          ),
+                  ),
+                  Center(
+                child: Container(
+                  height: size * 0.15,
+                  width: size * 0.15,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.black87,
+                    border: Border.all(color: Colors.white24, width: 2),
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  ),
+);
+}
 
   Widget _buildBottomPlayerBar(BuildContext context, Track track, bool isWide) {
     if (isWide) {
@@ -366,7 +575,18 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
         if (track.thumbnail != null)
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
-            child: Image.network(track.thumbnail!, width: 56, height: 56, fit: BoxFit.cover),
+            child: Image.network(
+              track.thumbnail!, 
+              width: 56, 
+              height: 56, 
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(
+                width: 56,
+                height: 56,
+                color: Colors.grey.shade800,
+                child: const Icon(Icons.music_note, color: Colors.white54),
+              ),
+            ),
           ),
         const SizedBox(width: 16),
         Expanded(
@@ -450,13 +670,19 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
               onPressed: () => musicProvider.seekBackward(),
             ),
             const SizedBox(width: 5),
-            Container(
-              decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-              child: IconButton(
-                icon: Icon(musicProvider.isPlaying ? Icons.pause : Icons.play_arrow, size: 36, color: Colors.black),
-                onPressed: () => musicProvider.togglePlayPause(),
+              Container(
+                decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                child: IconButton(
+                  icon: Icon(
+                    musicProvider.isCompleted 
+                        ? Icons.replay 
+                        : (musicProvider.isPlaying ? Icons.pause : Icons.play_arrow), 
+                    size: 36, 
+                    color: Colors.black
+                  ),
+                  onPressed: () => musicProvider.togglePlayPause(),
+                ),
               ),
-            ),
             const SizedBox(width: 5),
             IconButton(
               icon: const Icon(Icons.forward_10, size: 28),

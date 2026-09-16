@@ -26,6 +26,7 @@ class MusicProvider with ChangeNotifier {
   bool _isShuffle = false;
   LoopMode _loopMode = LoopMode.off;
   List<Track> _queue = [];
+  List<Track> _recentlyPlayed = [];
   List<Track> _favorites = [];
   List<Playlist> _playlists = [];
   double _volume = 1.0;
@@ -33,6 +34,7 @@ class MusicProvider with ChangeNotifier {
   List<Track> get searchResults => _searchResults;
   List<String> get suggestions => _suggestions;
   List<Track> get queue => _queue;
+  List<Track> get recentlyPlayed => _recentlyPlayed;
   List<Track> get favorites => _favorites;
   List<Playlist> get playlists => _playlists;
   Track? get currentTrack => _currentTrack;
@@ -45,6 +47,7 @@ class MusicProvider with ChangeNotifier {
   bool get isShuffle => _isShuffle;
   LoopMode get loopMode => _loopMode;
   double get volume => _volume;
+  bool get isCompleted => _audioPlayer.processingState == ProcessingState.completed;
 
   MusicProvider() {
     _loadData();
@@ -55,6 +58,7 @@ class MusicProvider with ChangeNotifier {
           _audioPlayer.seek(Duration.zero);
           _audioPlayer.play();
         } else {
+          // Play next track if possible. Otherwise it stops here.
           playNext();
         }
       }
@@ -92,6 +96,12 @@ class MusicProvider with ChangeNotifier {
       if (currentTrackStr != null) {
         _currentTrack = Track.fromJson(Map<String, dynamic>.from(json.decode(currentTrackStr)));
       }
+
+      final recentlyPlayedStr = prefs.getString('recentlyPlayed');
+      if (recentlyPlayedStr != null) {
+        final List decoded = json.decode(recentlyPlayedStr);
+        _recentlyPlayed = decoded.map((e) => Track.fromJson(Map<String, dynamic>.from(e))).toList();
+      }
       
       _favorites = await _apiService.getFavorites();
       _playlists = await _apiService.getPlaylists();
@@ -111,11 +121,17 @@ class MusicProvider with ChangeNotifier {
 
 
   Future<void> _saveCurrentTrack() async {
+    if (_currentTrack == null) return;
     final prefs = await SharedPreferences.getInstance();
-    if (_currentTrack != null) {
-      await prefs.setString('currentTrack', json.encode(_currentTrack!.toJson()));
-    }
+    await prefs.setString('currentTrack', json.encode(_currentTrack!.toJson()));
   }
+
+  Future<void> _saveRecentlyPlayed() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = _recentlyPlayed.map((e) => e.toJson()).toList();
+    await prefs.setString('recentlyPlayed', json.encode(list));
+  }
+
 
   // Playlist Management
   Future<void> createPlaylist(String name) async {
@@ -149,11 +165,12 @@ class MusicProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> renamePlaylist(String id, String newName) async {
+  Future<void> updatePlaylist(String id, String newName, String? newCoverImage) async {
     if (newName.trim().isEmpty) return;
     final playlist = _playlists.firstWhere((p) => p.id == id);
     playlist.name = newName.trim();
-    await _apiService.renamePlaylist(id, newName.trim());
+    playlist.customCoverImage = newCoverImage?.trim().isEmpty == true ? null : newCoverImage?.trim();
+    await _apiService.updatePlaylist(id, newName.trim(), playlist.customCoverImage);
     notifyListeners();
   }
 
@@ -216,6 +233,15 @@ class MusicProvider with ChangeNotifier {
   Future<void> playTrack(Track track) async {
     _currentTrack = track;
     _saveCurrentTrack(); // Save track for persistence
+    
+    // Update recently played
+    _recentlyPlayed.removeWhere((t) => t.videoId == track.videoId);
+    _recentlyPlayed.insert(0, track);
+    if (_recentlyPlayed.length > 20) {
+      _recentlyPlayed = _recentlyPlayed.take(20).toList();
+    }
+    _saveRecentlyPlayed();
+
     // Update _currentIndex only if track is in _searchResults (don't override if caller already set it)
     final idx = _searchResults.indexOf(track);
     if (idx != -1) _currentIndex = idx;
@@ -338,8 +364,22 @@ class MusicProvider with ChangeNotifier {
     if (_audioPlayer.playing) {
       _audioPlayer.pause();
     } else {
+      if (_audioPlayer.processingState == ProcessingState.completed) {
+        _audioPlayer.seek(Duration.zero);
+      }
       _audioPlayer.play();
     }
+  }
+
+  Future<void> stopPlayback() async {
+    await _audioPlayer.stop();
+    _currentTrack = null;
+    
+    // Remove from saved preferences
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('currentTrack');
+    
+    notifyListeners();
   }
 
 

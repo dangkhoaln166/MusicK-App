@@ -48,9 +48,20 @@ class LikedSongsScreen extends StatelessWidget {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
                     leading: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: track.thumbnail != null
-                          ? Image.network(track.thumbnail!, width: 60, height: 60, fit: BoxFit.cover)
-                          : Container(width: 60, height: 60, color: Colors.grey.shade800),
+                          child: track.thumbnail != null
+                              ? Image.network(
+                                  track.thumbnail!, 
+                                  width: 60, 
+                                  height: 60, 
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) => Container(
+                                    width: 60,
+                                    height: 60,
+                                    color: Colors.grey.shade800,
+                                    child: const Icon(Icons.music_note, color: Colors.white54),
+                                  ),
+                                )
+                              : Container(width: 60, height: 60, color: Colors.grey.shade800),
                     ),
                     title: Text(
                       track.title,
@@ -66,16 +77,38 @@ class LikedSongsScreen extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.check_circle, color: Colors.greenAccent),
+                          icon: const Icon(Icons.delete, color: Colors.redAccent),
                           onPressed: () {
-                            musicProvider.toggleFavorite(track);
+                            showDialog(
+                              context: context,
+                              builder: (BuildContext context) {
+                                return AlertDialog(
+                                  backgroundColor: Colors.grey.shade900,
+                                  title: const Text('Remove Song', style: TextStyle(color: Colors.white)),
+                                  content: Text('Are you sure you want to remove "${track.title}" from Liked Songs?', style: const TextStyle(color: Colors.white70)),
+                                  actions: [
+                                    TextButton(
+                                      child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                                      onPressed: () => Navigator.of(context).pop(),
+                                    ),
+                                    TextButton(
+                                      child: const Text('Remove', style: TextStyle(color: Colors.redAccent)),
+                                      onPressed: () {
+                                        musicProvider.toggleFavorite(track);
+                                        Navigator.of(context).pop();
+                                      },
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
                           },
                         ),
                         IconButton(
                           icon: const Icon(Icons.play_arrow, color: Colors.white),
                           onPressed: () {
                             if (musicProvider.currentTrack?.videoId != track.videoId) {
-                              musicProvider.playTrack(track);
+                              musicProvider.playPlaylist(favorites, startIndex: index);
                             }
                             Navigator.push(
                               context,
@@ -87,7 +120,7 @@ class LikedSongsScreen extends StatelessWidget {
                     ),
                     onTap: () {
                       if (musicProvider.currentTrack?.videoId != track.videoId) {
-                        musicProvider.playTrack(track);
+                        musicProvider.playPlaylist(favorites, startIndex: index);
                       }
                       Navigator.push(
                         context,

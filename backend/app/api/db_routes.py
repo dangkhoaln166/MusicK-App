@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File, Form, Request
 from sqlalchemy.orm import Session
 from typing import List
 import uuid
 
+import os
+import shutil
 from app.db.database import get_db
 from app.db import models
 from app.api import schemas
+from app.services.youtube import download_audio_background
 
 router = APIRouter(prefix="/db", tags=["database"])
 
@@ -24,13 +27,14 @@ def get_favorites(db: Session = Depends(get_db)):
     return [fav.track for fav in favorites]
 
 @router.post("/favorites", response_model=schemas.Track)
-def add_favorite(track: schemas.TrackCreate, db: Session = Depends(get_db)):
+def add_favorite(track: schemas.TrackCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     create_track_if_not_exists(db, track)
     fav = db.query(models.Favorite).filter(models.Favorite.track_id == track.video_id).first()
     if not fav:
         new_fav = models.Favorite(track_id=track.video_id)
         db.add(new_fav)
         db.commit()
+    background_tasks.add_task(download_audio_background, track.video_id)
     return track
 
 @router.delete("/favorites/{video_id}")
@@ -54,11 +58,13 @@ def create_playlist(playlist: schemas.PlaylistCreate, db: Session = Depends(get_
     return db_playlist
 
 @router.put("/playlists/{playlist_id}", response_model=schemas.Playlist)
-def rename_playlist(playlist_id: str, playlist: schemas.PlaylistBase, db: Session = Depends(get_db)):
+def update_playlist(playlist_id: str, playlist: schemas.PlaylistBase, db: Session = Depends(get_db)):
     db_playlist = db.query(models.Playlist).filter(models.Playlist.id == playlist_id).first()
     if not db_playlist:
         raise HTTPException(status_code=404, detail="Playlist not found")
     db_playlist.name = playlist.name
+    if playlist.cover_image is not None:
+        db_playlist.cover_image = playlist.cover_image
     db.commit()
     db.refresh(db_playlist)
     return db_playlist
@@ -72,7 +78,7 @@ def delete_playlist(playlist_id: str, db: Session = Depends(get_db)):
     return {"status": "success"}
 
 @router.post("/playlists/{playlist_id}/tracks")
-def add_track_to_playlist(playlist_id: str, track: schemas.TrackCreate, db: Session = Depends(get_db)):
+def add_track_to_playlist(playlist_id: str, track: schemas.TrackCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     db_playlist = db.query(models.Playlist).filter(models.Playlist.id == playlist_id).first()
     if not db_playlist:
         raise HTTPException(status_code=404, detail="Playlist not found")
@@ -81,6 +87,7 @@ def add_track_to_playlist(playlist_id: str, track: schemas.TrackCreate, db: Sess
     if db_track not in db_playlist.tracks:
         db_playlist.tracks.append(db_track)
         db.commit()
+    background_tasks.add_task(download_audio_background, track.video_id)
     return {"status": "success"}
 
 @router.delete("/playlists/{playlist_id}/tracks/{video_id}")
@@ -94,3 +101,61 @@ def remove_track_from_playlist(playlist_id: str, video_id: str, db: Session = De
         db_playlist.tracks.remove(db_track)
         db.commit()
     return {"status": "success"}
+
+@router.post("/tracks/{video_id}/thumbnail")
+async def update_thumbnail(
+    video_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    image_url: str = Form(None),
+    file: UploadFile = File(None)
+):
+    db_track = db.query(models.Track).filter(models.Track.video_id == video_id).first()
+    if not db_track:
+        raise HTTPException(status_code=404, detail="Track not found")
+        
+    if image_url:
+        db_track.thumbnail = image_url
+    elif file:
+        downloads_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "downloads", "thumbnails")
+        os.makedirs(downloads_dir, exist_ok=True)
+        ext = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+        filename = f"{video_id}_{uuid.uuid4().hex[:8]}.{ext}"
+        filepath = os.path.join(downloads_dir, filename)
+        
+        content = await file.read()
+        with open(filepath, "wb") as f:
+            f.write(content)
+            
+        base_url = str(request.base_url).rstrip("/")
+        db_track.thumbnail = f"{base_url}/api/downloads/thumbnails/{filename}"
+    else:
+        raise HTTPException(status_code=400, detail="Must provide image_url or file")
+        
+    db.commit()
+    db.refresh(db_track)
+    return {"status": "ok", "message": f"Updated thumbnail for {video_id}"}
+
+@router.post("/upload_image")
+async def upload_image(request: Request, file: UploadFile = File(...)):
+    # Check extension instead of content_type since Flutter sends octet-stream
+    ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
+    if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+        raise HTTPException(status_code=400, detail="File must be an image")
+    
+    # Generate unique filename
+    ext = os.path.splitext(file.filename)[1] if file.filename else ""
+    filename = f"{uuid.uuid4().hex}{ext}"
+    
+    downloads_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "downloads")
+    covers_dir = os.path.join(downloads_dir, "covers")
+    os.makedirs(covers_dir, exist_ok=True)
+    
+    file_path = os.path.join(covers_dir, filename)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    # Build full URL
+    base_url = str(request.base_url).rstrip("/")
+    url = f"{base_url}/api/downloads/covers/{filename}"
+    return {"url": url}
