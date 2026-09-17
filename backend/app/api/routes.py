@@ -8,6 +8,7 @@ from app.services import youtube
 import os
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 
 router = APIRouter()
 executor = ThreadPoolExecutor(max_workers=10)
@@ -159,7 +160,7 @@ async def suggest(q: str = Query(..., min_length=1)):
         raise HTTPException(status_code=500, detail=f"Suggest failed: {str(e)}")
 
 @router.get("/lyrics")
-async def get_lyrics(q: str = Query(..., min_length=1), db: Session = Depends(get_db)):
+async def get_lyrics(q: str = Query(..., min_length=1), video_id: str = Query(None), db: Session = Depends(get_db)):
     """Fetches lyrics for a given query, utilizing local database cache."""
     try:
         # 1. Check local cache
@@ -175,7 +176,7 @@ async def get_lyrics(q: str = Query(..., min_length=1), db: Session = Depends(ge
 
         # 2. If not in cache, fetch from internet
         loop = asyncio.get_event_loop()
-        lyrics = await loop.run_in_executor(executor, youtube.extract_lyrics, q)
+        lyrics = await loop.run_in_executor(executor, youtube.extract_lyrics, q, video_id)
         if not lyrics:
             raise HTTPException(status_code=404, detail="Lyrics not found")
         
@@ -244,9 +245,21 @@ class LyricsTranslateRequest(BaseModel):
     target_lang: str = "vi" # We keep it for compatibility but won't use it for romaji
 
 @router.post("/translate_lyrics")
-async def translate_lyrics(req: LyricsTranslateRequest):
-    """Generates Romaji using offline packages."""
+async def translate_lyrics(req: LyricsTranslateRequest, db: Session = Depends(get_db)):
+    """Generates Romaji and translates lyrics."""
     try:
+        # Create a unique hash for caching
+        hash_input = f"{req.lyrics}_{req.target_lang}".encode('utf-8')
+        cache_id = hashlib.md5(hash_input).hexdigest()
+        
+        # Check cache first
+        cache_entry = db.query(models.TranslationCache).filter(models.TranslationCache.id == cache_id).first()
+        if cache_entry:
+            return {
+                "translated": cache_entry.translated_text,
+                "romaji": cache_entry.romaji_text
+            }
+
         lines = req.lyrics.split('\n')
         text_lines = []
         tags = []
@@ -328,10 +341,27 @@ async def translate_lyrics(req: LyricsTranslateRequest):
                     out_translated.append(f"{tags[i]}{t_line}")
                 else:
                     out_translated.append(f"{tags[i]}{line}") # fallback to original if missing
-            
+                    
+        final_translated = "\n".join(out_translated) if trans_lines else ""
+        final_romaji = "\n".join(out_romaji)
+        
+        # Save to cache
+        new_cache = models.TranslationCache(
+            id=cache_id,
+            translated_text=final_translated,
+            romaji_text=final_romaji
+        )
+        try:
+            db.add(new_cache)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"Error saving translation cache: {e}")
+
         return {
-            "translated": "\n".join(out_translated) if trans_lines else "",
-            "romaji": "\n".join(out_romaji)
+            "translated": final_translated,
+            "romaji": final_romaji
         }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

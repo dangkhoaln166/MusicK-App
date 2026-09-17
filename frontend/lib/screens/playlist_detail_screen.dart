@@ -5,6 +5,7 @@ import '../models/playlist.dart';
 import '../providers/music_provider.dart';
 import '../services/api_service.dart';
 import '../utils/custom_toast.dart';
+import '../utils/playlist_utils.dart';
 import '../widgets/mini_player.dart';
 import 'player_screen.dart';
 
@@ -38,40 +39,53 @@ class PlaylistDetailScreen extends StatelessWidget {
             expandedHeight: 350,
             pinned: true,
             centerTitle: true,
+            backgroundColor: Colors.black,
             flexibleSpace: FlexibleSpaceBar(
+              collapseMode: CollapseMode.pin,
               centerTitle: true,
-              title: Text(playlist.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 20)),
-              background: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.purple.shade800, Colors.black],
-                  ),
-                ),
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 40.0),
-                    child: Container(
-                      width: 220,
-                      height: 220,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 30, offset: const Offset(0, 15))
+              title: Text(playlist.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+              background: LayoutBuilder(
+                builder: (context, constraints) {
+                  final top = constraints.biggest.height;
+                  final opacity = ((top - 200) / 100).clamp(0.0, 1.0);
+                  
+                  return Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.indigo.shade800, Colors.black],
+                      ),
+                    ),
+                    child: Opacity(
+                      opacity: opacity,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(height: 20),
+                          Container(
+                            width: 180,
+                            height: 180,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 30, offset: const Offset(0, 15))
+                              ],
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: playlist.coverImage != null
+                                ? Image.network(
+                                    playlist.coverImage!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.music_note, size: 80, color: Colors.white),
+                                  )
+                                : const Icon(Icons.music_note, size: 80, color: Colors.white),
+                          ),
                         ],
                       ),
-                      clipBehavior: Clip.antiAlias,
-                      child: playlist.coverImage != null
-                          ? Image.network(
-                              playlist.coverImage!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => const Icon(Icons.album, color: Colors.white24, size: 80),
-                            )
-                          : Container(color: Colors.grey.shade800, child: const Icon(Icons.music_note, size: 80, color: Colors.white54)),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ),
             actions: [
@@ -173,9 +187,12 @@ class PlaylistDetailScreen extends StatelessWidget {
               ),
             ),
           ),
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
+          SliverReorderableList(
+            itemCount: playlist.tracks.length,
+            onReorder: (oldIndex, newIndex) {
+              musicProvider.reorderPlaylistTracks(playlist.id, oldIndex, newIndex);
+            },
+            itemBuilder: (context, index) {
                 if (playlist.tracks.isEmpty) {
                   return SizedBox(
                     height: 300,
@@ -192,23 +209,28 @@ class PlaylistDetailScreen extends StatelessWidget {
                   );
                 }
 
-                if (index >= playlist.tracks.length) return null;
+                if (index >= playlist.tracks.length) return const SizedBox.shrink();
                 final track = playlist.tracks[index];
 
-                return Dismissible(
+                return ReorderableDelayedDragStartListener(
                   key: Key(track.videoId),
-                  direction: DismissDirection.endToStart,
-                  background: Container(
-                    color: Colors.redAccent,
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: const Icon(Icons.delete, color: Colors.white),
-                  ),
-                  onDismissed: (direction) {
-                    musicProvider.removeTrackFromPlaylist(playlist.id, track.videoId);
-                  },
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  index: index,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Dismissible(
+                      key: Key('dismiss_${track.videoId}'),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      color: Colors.redAccent,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: const Icon(Icons.delete, color: Colors.white),
+                    ),
+                    onDismissed: (direction) {
+                      musicProvider.removeTrackFromPlaylist(playlist.id, track.videoId);
+                    },
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     leading: ClipRRect(
                       borderRadius: BorderRadius.circular(4),
                       child: track.thumbnail != null
@@ -239,6 +261,10 @@ class PlaylistDetailScreen extends StatelessWidget {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline, color: Colors.white54),
+                          onPressed: () => PlaylistUtils.showAddToPlaylistDialog(context, track),
+                        ),
                         Consumer<MusicProvider>(
                           builder: (context, mp, _) {
                             final isFav = mp.isFavorite(track);
@@ -259,23 +285,27 @@ class PlaylistDetailScreen extends StatelessWidget {
                             );
                           },
                         ),
-                        const Icon(Icons.play_arrow, color: Colors.white54),
+                        ReorderableDragStartListener(
+                          index: index,
+                          child: const Padding(
+                            padding: EdgeInsets.only(left: 8.0, right: 8.0),
+                            child: Icon(Icons.drag_handle, color: Colors.white54),
+                          ),
+                        ),
                       ],
                     ),
                     onTap: () {
-                      if (musicProvider.currentTrack?.videoId != track.videoId) {
-                        musicProvider.playPlaylist(playlist.tracks, startIndex: index);
-                      }
+                      musicProvider.playPlaylist(playlist.tracks, startIndex: index);
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (context) => const PlayerScreen()),
                       );
                     },
                   ),
-                );
-              },
-              childCount: playlist.tracks.isEmpty ? 1 : playlist.tracks.length,
-            ),
+                ),
+              ),
+            );
+          },
           ),
         ],
       ),

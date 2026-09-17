@@ -6,7 +6,8 @@ from app.db.database import Base
 playlist_track_association = Table(
     'playlist_track', Base.metadata,
     Column('playlist_id', String, ForeignKey('playlists.id', ondelete="CASCADE"), primary_key=True),
-    Column('track_id', String, ForeignKey('tracks.video_id', ondelete="CASCADE"), primary_key=True)
+    Column('track_id', String, ForeignKey('tracks.video_id', ondelete="CASCADE"), primary_key=True),
+    Column('position', Integer, default=0)
 )
 
 class Track(Base):
@@ -28,12 +29,13 @@ class Playlist(Base):
     cover_image = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    tracks = relationship("Track", secondary=playlist_track_association, back_populates="playlists")
+    tracks = relationship("Track", secondary=playlist_track_association, back_populates="playlists", order_by=playlist_track_association.c.position)
 
 class Favorite(Base):
     __tablename__ = "favorites"
 
     track_id = Column(String, ForeignKey("tracks.video_id", ondelete="CASCADE"), primary_key=True)
+    position = Column(Integer, default=0)
     track = relationship("Track")
 
 class History(Base):
@@ -57,3 +59,11 @@ class LyricCache(Base):
     synced_lyrics = Column(String, nullable=True)
     lang = Column(String, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class TranslationCache(Base):
+    __tablename__ = "translation_cache"
+
+    id = Column(String, primary_key=True, index=True) # md5 hash of lyrics + target_lang
+    translated_text = Column(String, nullable=True)
+    romaji_text = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

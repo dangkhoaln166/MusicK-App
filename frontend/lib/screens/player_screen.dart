@@ -50,7 +50,7 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
       _lyricsCache.clear();
       _lyricsLanguage = LyricsLanguage.original;
       
-      _lyricsFuture = ApiService().getLyrics(track.title).then((data) {
+      _lyricsFuture = ApiService().getLyrics(track.title, videoId: track.videoId).then((data) {
         if (data != null && mounted) {
           _lyricsCache[LyricsLanguage.original] = data;
         }

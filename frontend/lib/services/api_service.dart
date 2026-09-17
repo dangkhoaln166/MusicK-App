@@ -95,8 +95,12 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>?> getLyrics(String query) async {
-    final response = await http.get(Uri.parse('$baseUrl/lyrics?q=${Uri.encodeComponent(query)}'));
+  Future<Map<String, dynamic>?> getLyrics(String query, {String? videoId}) async {
+    String url = '$baseUrl/lyrics?q=${Uri.encodeComponent(query)}';
+    if (videoId != null && videoId.isNotEmpty) {
+      url += '&video_id=${Uri.encodeComponent(videoId)}';
+    }
+    final response = await http.get(Uri.parse(url));
     if (response.statusCode == 200) {
       return json.decode(response.body)['lyrics'];
     }
@@ -175,6 +179,10 @@ class ApiService {
     );
   }
 
+  Future<void> removeFromHistory(String videoId) async {
+    await http.delete(Uri.parse('$baseUrl/db/history/$videoId'));
+  }
+
   Future<Map<String, String>> getSettings() async {
     try {
       final response = await http.get(Uri.parse('$baseUrl/db/settings'));
@@ -196,7 +204,7 @@ class ApiService {
     await http.post(
       Uri.parse('$baseUrl/db/settings'),
       headers: {'Content-Type': 'application/json'},
-      body: json.encode({'key': key, 'value': value}),
+      body: json.encode({key: value}),
     );
   }
 
@@ -247,6 +255,26 @@ class ApiService {
 
   Future<void> removeTrackFromPlaylist(String playlistId, String videoId) async {
     await http.delete(Uri.parse('$baseUrl/db/playlists/$playlistId/tracks/$videoId'));
+  }
+
+  Future<void> reorderPlaylistTracks(String playlistId, List<String> trackIds) async {
+    await http.put(
+      Uri.parse('$baseUrl/db/playlists/$playlistId/reorder'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(trackIds),
+    );
+  }
+
+  Future<void> reorderFavorites(List<String> trackIds) async {
+    await http.put(
+      Uri.parse('$baseUrl/db/favorites/reorder'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(trackIds),
+    );
+  }
+
+  Future<void> clearFavorites() async {
+    await http.delete(Uri.parse('$baseUrl/db/favorites'));
   }
 
   Future<bool> updateThumbnail(String videoId, String imageUrl) async {

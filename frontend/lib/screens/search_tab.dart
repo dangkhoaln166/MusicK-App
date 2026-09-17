@@ -504,27 +504,15 @@ class _SearchTabState extends State<SearchTab> {
                           final isAdded = playlist.tracks.any((t) => t.videoId == track.videoId);
                           return ListTile(
                             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                            leading: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: playlist.tracks.isNotEmpty && playlist.tracks.first.thumbnail != null
-                                  ? Image.network(
-                                      playlist.tracks.first.thumbnail!,
-                                      width: 48,
-                                      height: 48,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) => Container(
-                                        width: 48,
-                                        height: 48,
-                                        color: isDark ? Colors.grey.shade800 : Colors.grey.shade300,
-                                        child: const Icon(Icons.music_note, color: Colors.grey),
-                                      ),
-                                    )
-                                  : Container(
-                                      width: 48,
-                                      height: 48,
-                                      color: isDark ? Colors.grey.shade800 : Colors.grey.shade300,
-                                      child: const Icon(Icons.music_note, color: Colors.grey),
-                                    ),
+                            leading: Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                image: playlist.coverImage != null ? DecorationImage(image: NetworkImage(playlist.coverImage!), fit: BoxFit.cover) : null,
+                                color: isDark ? Colors.grey.shade800 : Colors.grey.shade300,
+                              ),
+                              child: playlist.coverImage == null ? const Icon(Icons.music_note, color: Colors.grey) : null,
                             ),
                             title: Text(playlist.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                             subtitle: Text('${playlist.tracks.length} tracks', style: TextStyle(color: Colors.grey.shade500)),

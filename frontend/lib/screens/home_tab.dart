@@ -7,11 +7,11 @@ import '../utils/custom_toast.dart';
 import '../widgets/draggable_editable_text.dart';
 import '../widgets/resizable_banner.dart';
 import '../services/api_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import '../widgets/hover_scale_card.dart';
 import 'player_screen.dart';
 import 'playlist_detail_screen.dart';
+import 'history_screen.dart';
 
 class HomeTab extends StatefulWidget {
   const HomeTab({Key? key}) : super(key: key);
@@ -30,9 +30,10 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Future<void> _loadCustomHeroImage() async {
-    final prefs = await SharedPreferences.getInstance();
+    final settings = await ApiService().getSettings();
     setState(() {
-      _customHeroImage = prefs.getString('customHeroImage');
+      _customHeroImage = settings['customHeroImage'];
+      if (_customHeroImage != null && _customHeroImage!.isEmpty) _customHeroImage = null;
     });
   }
 
@@ -159,7 +160,9 @@ class _HomeTabState extends State<HomeTab> {
                           ),
                           const Spacer(),
                           TextButton(
-                            onPressed: () {},
+                            onPressed: () {
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => const HistoryScreen()));
+                            },
                             child: const Text('SEE ALL', style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
                           )
                         ],
@@ -179,77 +182,92 @@ class _HomeTabState extends State<HomeTab> {
                         (context, index) {
                           final track = recentlyPlayed[index];
                           return HoverScaleCard(
-                            child: InkWell(
-                              onTap: () {
-                                musicProvider.playTrack(track);
-                                Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
-                              },
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
+                            child: Stack(
+                              children: [
+                                InkWell(
+                                  onTap: () {
+                                    musicProvider.playTrack(track);
+                                    Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+                                  },
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05), width: 1),
-                                ),
-                                child: Row(
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), bottomLeft: Radius.circular(12)),
-                                      child: track.thumbnail != null
-                                        ? Image.network(track.thumbnail!, width: 70, height: double.infinity, fit: BoxFit.cover,
-                                            errorBuilder: (ctx, err, stack) => Container(width: 70, color: isDark ? Colors.grey.shade800 : Colors.grey.shade300, child: Icon(Icons.music_note, color: isDark ? Colors.white54 : Colors.black54)),
-                                          )
-                                        : Container(width: 70, color: isDark ? Colors.grey.shade800 : Colors.grey.shade300, child: Icon(Icons.music_note, color: isDark ? Colors.white54 : Colors.black54)),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05), width: 1),
                                     ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            track.title,
-                                            style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 14),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
+                                    child: Row(
+                                      children: [
+                                        ClipRRect(
+                                          borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), bottomLeft: Radius.circular(12)),
+                                          child: track.thumbnail != null
+                                            ? Image.network(track.thumbnail!, width: 70, height: double.infinity, fit: BoxFit.cover,
+                                                errorBuilder: (ctx, err, stack) => Container(width: 70, color: isDark ? Colors.grey.shade800 : Colors.grey.shade300, child: Icon(Icons.music_note, color: isDark ? Colors.white54 : Colors.black54)),
+                                              )
+                                            : Container(width: 70, color: isDark ? Colors.grey.shade800 : Colors.grey.shade300, child: Icon(Icons.music_note, color: isDark ? Colors.white54 : Colors.black54)),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                track.title,
+                                                style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 14),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                track.channel ?? 'Unknown Artist',
+                                                style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
                                           ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            track.channel ?? 'Unknown Artist',
-                                            style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Consumer<MusicProvider>(
-                                      builder: (context, mp, _) {
-                                        final isFav = mp.isFavorite(track);
-                                        return IconButton(
-                                          icon: Icon(
-                                            isFav ? Icons.favorite : Icons.favorite_border,
-                                            color: isFav ? Colors.greenAccent : Colors.white54,
-                                          ),
-                                          onPressed: () {
-                                            mp.toggleFavorite(track);
-                                            CustomToast.show(
-                                              context,
-                                              isFav ? 'Removed from Liked Songs' : 'Added to Liked Songs',
-                                              icon: isFav ? Icons.favorite_border : Icons.favorite,
-                                              color: isFav ? Colors.white54 : Colors.greenAccent,
+                                        ),
+                                        Consumer<MusicProvider>(
+                                          builder: (context, mp, _) {
+                                            final isFav = mp.isFavorite(track);
+                                            return IconButton(
+                                              icon: Icon(
+                                                isFav ? Icons.favorite : Icons.favorite_border,
+                                                color: isFav ? Colors.greenAccent : Colors.white54,
+                                              ),
+                                              onPressed: () {
+                                                mp.toggleFavorite(track);
+                                                CustomToast.show(
+                                                  context,
+                                                  isFav ? 'Removed from Liked Songs' : 'Added to Liked Songs',
+                                                  icon: isFav ? Icons.favorite_border : Icons.favorite,
+                                                  color: isFav ? Colors.white54 : Colors.greenAccent,
+                                                );
+                                              },
                                             );
                                           },
-                                        );
-                                      },
+                                        ),
+                                        const Padding(
+                                          padding: EdgeInsets.all(12.0),
+                                          child: Icon(Icons.play_circle_fill, color: Colors.blueAccent, size: 32),
+                                        ),
+                                      ],
                                     ),
-                                    const Padding(
-                                      padding: EdgeInsets.all(12.0),
-                                      child: Icon(Icons.play_circle_fill, color: Colors.blueAccent, size: 32),
-                                    ),
-                                  ],
+                                  ),
                                 ),
-                              ),
+                                Positioned(
+                                  top: -4,
+                                  right: -4,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.close, size: 16),
+                                    color: Colors.white54,
+                                    onPressed: () {
+                                      musicProvider.removeFromHistory(track);
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
                           );
                         },
@@ -584,11 +602,10 @@ class _HomeTabState extends State<HomeTab> {
                 TextButton(
                   onPressed: () async {
                     final newUrl = urlController.text.trim();
-                    final prefs = await SharedPreferences.getInstance();
                     if (newUrl.isEmpty) {
-                      await prefs.remove('customHeroImage');
+                      await ApiService().updateSetting('customHeroImage', '');
                     } else {
-                      await prefs.setString('customHeroImage', newUrl);
+                      await ApiService().updateSetting('customHeroImage', newUrl);
                     }
                     setState(() {
                       _customHeroImage = newUrl.isEmpty ? null : newUrl;

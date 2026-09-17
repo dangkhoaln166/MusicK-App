@@ -9,6 +9,7 @@ from app.db.database import get_db
 from app.db import models
 from app.api import schemas
 from app.services.youtube import download_audio_background
+from sqlalchemy import text, func
 
 router = APIRouter(prefix="/db", tags=["database"])
 
@@ -23,7 +24,7 @@ def create_track_if_not_exists(db: Session, track: schemas.TrackCreate):
 
 @router.get("/favorites", response_model=List[schemas.Track])
 def get_favorites(db: Session = Depends(get_db)):
-    favorites = db.query(models.Favorite).all()
+    favorites = db.query(models.Favorite).order_by(models.Favorite.position).all()
     return [fav.track for fav in favorites]
 
 @router.post("/favorites", response_model=schemas.Track)
@@ -31,7 +32,9 @@ def add_favorite(track: schemas.TrackCreate, background_tasks: BackgroundTasks, 
     create_track_if_not_exists(db, track)
     fav = db.query(models.Favorite).filter(models.Favorite.track_id == track.video_id).first()
     if not fav:
-        new_fav = models.Favorite(track_id=track.video_id)
+        # Get min position to insert at the beginning
+        min_pos = db.query(func.min(models.Favorite.position)).scalar() or 0
+        new_fav = models.Favorite(track_id=track.video_id, position=min_pos - 1)
         db.add(new_fav)
         db.commit()
     background_tasks.add_task(download_audio_background, track.video_id)
@@ -43,6 +46,22 @@ def remove_favorite(video_id: str, db: Session = Depends(get_db)):
     if fav:
         db.delete(fav)
         db.commit()
+    return {"status": "success"}
+
+@router.delete("/favorites")
+def clear_favorites(db: Session = Depends(get_db)):
+    db.query(models.Favorite).delete()
+    db.commit()
+    return {"status": "success"}
+
+@router.put("/favorites/reorder")
+def reorder_favorites(track_ids: List[str], db: Session = Depends(get_db)):
+    favorites = db.query(models.Favorite).all()
+    fav_map = {f.track_id: f for f in favorites}
+    for i, tid in enumerate(track_ids):
+        if tid in fav_map:
+            fav_map[tid].position = i
+    db.commit()
     return {"status": "success"}
 
 @router.get("/playlists", response_model=List[schemas.Playlist])
@@ -85,8 +104,23 @@ def add_track_to_playlist(playlist_id: str, track: schemas.TrackCreate, backgrou
     
     db_track = create_track_if_not_exists(db, track)
     if db_track not in db_playlist.tracks:
+        # Determine the next position (at the beginning)
+        current_min = db.execute(
+            text("SELECT MIN(position) FROM playlist_track WHERE playlist_id = :pid"),
+            {"pid": playlist_id}
+        ).scalar()
+        next_pos = 0 if current_min is None else current_min - 1
+
         db_playlist.tracks.append(db_track)
         db.commit()
+        
+        # Update the position manually since append doesn't set it
+        db.execute(
+            text("UPDATE playlist_track SET position = :pos WHERE playlist_id = :pid AND track_id = :tid"),
+            {"pos": next_pos, "pid": playlist_id, "tid": track.video_id}
+        )
+        db.commit()
+        
     background_tasks.add_task(download_audio_background, track.video_id)
     return {"status": "success"}
 
@@ -100,6 +134,20 @@ def remove_track_from_playlist(playlist_id: str, video_id: str, db: Session = De
     if db_track in db_playlist.tracks:
         db_playlist.tracks.remove(db_track)
         db.commit()
+    return {"status": "success"}
+
+@router.put("/playlists/{playlist_id}/reorder")
+def reorder_playlist(playlist_id: str, track_ids: List[str], db: Session = Depends(get_db)):
+    db_playlist = db.query(models.Playlist).filter(models.Playlist.id == playlist_id).first()
+    if not db_playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+        
+    for idx, tid in enumerate(track_ids):
+        db.execute(
+            text("UPDATE playlist_track SET position = :pos WHERE playlist_id = :pid AND track_id = :tid"),
+            {"pos": idx, "pid": playlist_id, "tid": tid}
+        )
+    db.commit()
     return {"status": "success"}
 
 @router.post("/tracks/{video_id}/thumbnail")

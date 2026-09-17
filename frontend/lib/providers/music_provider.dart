@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/track.dart';
 import '../models/playlist.dart';
@@ -40,7 +39,8 @@ class MusicProvider with ChangeNotifier {
   List<Track> _favorites = [];
   List<Playlist> _playlists = [];
   double _volume = 1.0;
-
+  String? _likedSongsCover;
+  String? get likedSongsCover => _likedSongsCover;
   List<Track> get searchResults => _searchResults;
   List<Channel> get searchChannels => _searchChannels;
   List<String> get suggestions => _suggestions;
@@ -111,9 +111,11 @@ class MusicProvider with ChangeNotifier {
         _currentTrack = Track.fromJson(Map<String, dynamic>.from(json.decode(currentTrackStr)));
       }
 
-      final prefs = await SharedPreferences.getInstance();
-      _searchHistory = prefs.getStringList('searchHistory') ?? [];
-      final channelHistoryStr = prefs.getString('channelHistory');
+      final searchHistoryStr = settings['searchHistory'];
+      if (searchHistoryStr != null) {
+        _searchHistory = List<String>.from(json.decode(searchHistoryStr));
+      }
+      final channelHistoryStr = settings['channelHistory'];
       if (channelHistoryStr != null) {
         final List decoded = json.decode(channelHistoryStr);
         _channelHistory = decoded.map((e) => Channel.fromJson(Map<String, dynamic>.from(e))).toList();
@@ -123,6 +125,9 @@ class MusicProvider with ChangeNotifier {
       
       _favorites = await _apiService.getFavorites();
       _playlists = await _apiService.getPlaylists();
+      
+      _likedSongsCover = settings['liked_songs_cover'];
+      if (_likedSongsCover?.isEmpty == true) _likedSongsCover = null;
       
       notifyListeners();
     } catch (e) {
@@ -164,7 +169,7 @@ class MusicProvider with ChangeNotifier {
   Future<void> addTrackToPlaylist(String playlistId, Track track) async {
     final playlist = _playlists.firstWhere((p) => p.id == playlistId);
     if (!playlist.tracks.any((t) => t.videoId == track.videoId)) {
-      playlist.tracks.add(track);
+      playlist.tracks.insert(0, track);
       await _apiService.addTrackToPlaylist(playlistId, track);
       notifyListeners();
     }
@@ -175,6 +180,20 @@ class MusicProvider with ChangeNotifier {
     playlist.tracks.removeWhere((t) => t.videoId == trackId);
     await _apiService.removeTrackFromPlaylist(playlistId, trackId);
     notifyListeners();
+  }
+
+  Future<void> reorderPlaylistTracks(String playlistId, int oldIndex, int newIndex) async {
+    final playlist = _playlists.firstWhere((p) => p.id == playlistId);
+    if (newIndex > oldIndex) {
+      newIndex -= 1;
+    }
+    final track = playlist.tracks.removeAt(oldIndex);
+    playlist.tracks.insert(newIndex, track);
+    notifyListeners();
+    
+    // Save to backend
+    final trackIds = playlist.tracks.map((t) => t.videoId).toList();
+    await _apiService.reorderPlaylistTracks(playlistId, trackIds);
   }
 
   Future<void> updatePlaylist(String id, String newName, String? newCoverImage) async {
@@ -248,15 +267,13 @@ class MusicProvider with ChangeNotifier {
     _searchHistory.remove(q);
     _searchHistory.insert(0, q);
     if (_searchHistory.length > 20) _searchHistory = _searchHistory.sublist(0, 20);
-    final prefs = await SharedPreferences.getInstance();
-    prefs.setStringList('searchHistory', _searchHistory);
+    await _apiService.updateSetting('searchHistory', json.encode(_searchHistory));
   }
 
   Future<void> removeSearchHistory(String query) async {
     _searchHistory.remove(query);
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    prefs.setStringList('searchHistory', _searchHistory);
+    await _apiService.updateSetting('searchHistory', json.encode(_searchHistory));
   }
 
   Future<void> fetchExplore() async {
@@ -289,27 +306,30 @@ class MusicProvider with ChangeNotifier {
     _channelHistory.insert(0, channel);
     if (_channelHistory.length > 20) _channelHistory = _channelHistory.sublist(0, 20);
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    prefs.setString('channelHistory', json.encode(_channelHistory.map((c) => c.toJson()).toList()));
+    await _apiService.updateSetting('channelHistory', json.encode(_channelHistory.map((c) => c.toJson()).toList()));
   }
 
   Future<void> clearChannelHistory() async {
     _channelHistory.clear();
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    prefs.remove('channelHistory');
+    await _apiService.updateSetting('channelHistory', '[]');
   }
 
   Future<void> removeChannelHistory(String channelId) async {
     _channelHistory.removeWhere((c) => c.id == channelId);
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    prefs.setString('channelHistory', json.encode(_channelHistory.map((c) => c.toJson()).toList()));
+    await _apiService.updateSetting('channelHistory', json.encode(_channelHistory.map((c) => c.toJson()).toList()));
   }
 
   void clearSuggestions() {
     _suggestions = [];
     notifyListeners();
+  }
+
+  Future<void> removeFromHistory(Track track) async {
+    _recentlyPlayed.removeWhere((t) => t.videoId == track.videoId);
+    notifyListeners();
+    await _apiService.removeFromHistory(track.videoId);
   }
 
   Future<void> playTrack(Track track) async {
@@ -407,7 +427,7 @@ class MusicProvider with ChangeNotifier {
       _favorites.removeWhere((t) => t.videoId == track.videoId);
       await _apiService.removeFavorite(track.videoId);
     } else {
-      _favorites.add(track);
+      _favorites.insert(0, track);
       await _apiService.addFavorite(track);
     }
     notifyListeners();
@@ -415,6 +435,30 @@ class MusicProvider with ChangeNotifier {
 
   bool isFavorite(Track track) {
     return _favorites.any((t) => t.videoId == track.videoId);
+  }
+
+  Future<void> reorderFavorites(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) {
+      newIndex -= 1;
+    }
+    final track = _favorites.removeAt(oldIndex);
+    _favorites.insert(newIndex, track);
+    notifyListeners();
+    
+    final trackIds = _favorites.map((t) => t.videoId).toList();
+    await _apiService.reorderFavorites(trackIds);
+  }
+
+  Future<void> clearFavorites() async {
+    _favorites.clear();
+    notifyListeners();
+    await _apiService.clearFavorites();
+  }
+
+  Future<void> updateLikedSongsCover(String? newCover) async {
+    _likedSongsCover = newCover?.trim().isEmpty == true ? null : newCover?.trim();
+    notifyListeners();
+    await _apiService.updateSetting('liked_songs_cover', _likedSongsCover ?? '');
   }
 
   void playPrevious() {

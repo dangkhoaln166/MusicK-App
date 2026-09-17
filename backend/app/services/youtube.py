@@ -277,38 +277,112 @@ def _fetch_lrclib(query: str) -> Optional[Dict[str, Optional[str]]]:
                     if track.get('plainLyrics') or track.get('syncedLyrics'):
                         return {
                             "plainLyrics": track.get('plainLyrics'),
-                            "syncedLyrics": track.get('syncedLyrics')
+                            "syncedLyrics": None  # Disabled to avoid sync issues with non-official audio
                         }
     except Exception as e:
         pass
     return None
 
-def extract_lyrics(query: str) -> Optional[Dict[str, Optional[str]]]:
+def _fetch_youtube_subtitles(video_id: str) -> Optional[Dict[str, Optional[str]]]:
+    ydl_opts = {
+        'quiet': True,
+        'skip_download': True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_id, download=False)
+            subs = info.get('subtitles', {})
+            auto_subs = info.get('automatic_captions', {})
+            
+            # Prefer manual subtitles, then auto-captions. Prefer 'vi', then 'en'
+            target_subs = subs.get('vi') or subs.get('en') or auto_subs.get('vi') or auto_subs.get('en')
+            if not target_subs:
+                return None
+            
+            json3_sub = next((s for s in target_subs if s.get('ext') == 'json3'), None)
+            if not json3_sub:
+                return None
+                
+            req = urllib.request.Request(json3_sub['url'], headers={'User-Agent': 'Mozilla/5.0'})
+            resp = urllib.request.urlopen(req)
+            data = json.loads(resp.read())
+            
+            lrc_lines = []
+            plain_lines = []
+            for event in data.get('events', []):
+                start_ms = event.get('tStartMs', 0)
+                segs = event.get('segs', [])
+                text = "".join(seg.get('utf8', '') for seg in segs).strip()
+                if not text:
+                    continue
+                
+                lines = text.split('\n')
+                duration_per_line = event.get('dDurationMs', 0) / max(1, len(lines))
+                for i, line in enumerate(lines):
+                    if not line.strip(): continue
+                    line_start = start_ms + int(i * duration_per_line)
+                    minutes = line_start // 60000
+                    seconds = (line_start % 60000) / 1000
+                    lrc_lines.append(f"[{minutes:02d}:{seconds:05.2f}]{line}")
+                    plain_lines.append(line)
+                    
+            if not lrc_lines:
+                return None
+                
+            return {
+                "plainLyrics": "\n".join(plain_lines),
+                "syncedLyrics": "\n".join(lrc_lines)
+            }
+    except Exception as e:
+        print("YT Subtitle fetch error:", e)
+        return None
+
+def extract_lyrics(query: str, video_id: str = None) -> Optional[Dict[str, Optional[str]]]:
+    if video_id:
+        yt_lyrics = _fetch_youtube_subtitles(video_id)
+        if yt_lyrics:
+            return yt_lyrics
+
     # Try the original query
     res = _fetch_lrclib(query)
     if res: return res
 
-    # 1. Clean the title from parentheses, brackets, "official"
+    # 1. Clean the title from parentheses, brackets
     clean_query = re.sub(r'\(.*?\)', '', query)
     clean_query = re.sub(r'\[.*?\]', '', clean_query)
-    clean_query = re.sub(r'(?i)official.*', '', clean_query)
-    clean_query = clean_query.replace('|', ' ').replace('-', ' ')
-    clean_query = re.sub(r'\s+', ' ', clean_query).strip()
+    
+    # Remove common noise words (case insensitive)
+    noise_words = [
+        'official video', 'official music video', 'official audio', 'official',
+        'lyric video', 'lyrics', 'lyric', 'top tik tok', 'tik tok', 'tiktok',
+        'remix', 'cover', 'nightcore', 'sped up', 'slowed', 'reverb', 'audio',
+        'mv', 'hd', 'hq', 'live', 'performance'
+    ]
+    for word in noise_words:
+        clean_query = re.sub(r'(?i)\b' + word + r'\b', '', clean_query)
+    
+    # Remove extra spaces or trailing hyphens
+    clean_query = re.sub(r'\s+', ' ', clean_query).replace(' - - ', ' - ').strip(' -|')
 
     if clean_query != query and clean_query:
         res = _fetch_lrclib(clean_query)
         if res: return res
 
-    # 2. Try the first part before a pipe or dash, in case it's "Song Name - Artist" or "Song Name | Artist"
-    if '|' in query:
-        first_part = query.split('|')[0].strip()
-        res = _fetch_lrclib(first_part)
-        if res: return res
-        
-    if '-' in query:
-        first_part = query.split('-')[0].strip()
-        res = _fetch_lrclib(first_part)
-        if res: return res
+    # 2. Try swapping or cleaning around dash
+    if '-' in clean_query:
+        parts = clean_query.split('-')
+        if len(parts) >= 2:
+            # Maybe the dash was separating artist and title, but one side has garbage.
+            # Try just combining them without the dash
+            combined = (parts[0].strip() + ' ' + parts[1].strip()).strip()
+            res = _fetch_lrclib(combined)
+            if res: return res
+            
+            # If still nothing, try the first part (risky, might get popular covers like Rihanna's Umbrella)
+            # Only do this if it's very long and likely to fail otherwise
+            if len(combined) > 30:
+                res = _fetch_lrclib(parts[0].strip())
+                if res: return res
 
     return None
 
