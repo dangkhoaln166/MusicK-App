@@ -8,8 +8,11 @@ import 'screens/main_layout.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'services/device_service.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await DeviceService.init();
 
   runApp(
     MultiProvider(
