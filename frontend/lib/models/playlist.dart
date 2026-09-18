@@ -3,18 +3,23 @@ import 'track.dart';
 class Playlist {
   final String id;
   String name;
+  String? customCoverImage;
   final List<Track> tracks;
   final DateTime createdAt;
 
   Playlist({
     required this.id,
     required this.name,
+    this.customCoverImage,
     List<Track>? tracks,
     DateTime? createdAt,
   })  : tracks = tracks ?? [],
         createdAt = createdAt ?? DateTime.now();
 
   String? get coverImage {
+    if (customCoverImage != null && customCoverImage!.isNotEmpty) {
+      return customCoverImage;
+    }
     if (tracks.isNotEmpty) {
       return tracks.first.thumbnail;
     }
@@ -25,8 +30,9 @@ class Playlist {
     return Playlist(
       id: json['id'],
       name: json['name'],
-      tracks: (json['tracks'] as List).map((e) => Track.fromJson(Map<String, dynamic>.from(e))).toList(),
-      createdAt: DateTime.parse(json['createdAt']),
+      customCoverImage: json['cover_image'],
+      tracks: json['tracks'] != null ? (json['tracks'] as List).map((e) => Track.fromJson(Map<String, dynamic>.from(e))).toList() : [],
+      createdAt: DateTime.parse(json['created_at'] ?? json['createdAt'] ?? DateTime.now().toIso8601String()),
     );
   }
 
@@ -34,6 +40,7 @@ class Playlist {
     return {
       'id': id,
       'name': name,
+      'cover_image': customCoverImage,
       'tracks': tracks.map((t) => t.toJson()).toList(),
       'createdAt': createdAt.toIso8601String(),
     };

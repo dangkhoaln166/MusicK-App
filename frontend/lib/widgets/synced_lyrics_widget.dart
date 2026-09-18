@@ -13,7 +13,7 @@ class SyncedLyricsWidget extends StatefulWidget {
   _SyncedLyricsWidgetState createState() => _SyncedLyricsWidgetState();
 }
 
-class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
+class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   late List<GlobalKey> _keys;
   int _currentIndex = 0;
@@ -26,11 +26,20 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _keys = List.generate(widget.lyrics.length, (_) => GlobalKey());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final mp = context.read<MusicProvider>();
       _positionSub = mp.audioPlayer.positionStream.listen(_checkPosition);
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Re-center when coming back from background
+      _scrollToActive(_currentIndex);
+    }
   }
 
   void _checkPosition(Duration position) {
@@ -79,7 +88,8 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
   @override
   void didUpdateWidget(covariant SyncedLyricsWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.lyrics != widget.lyrics) {
+    if (oldWidget.lyrics.length != widget.lyrics.length || 
+        (oldWidget.lyrics.isNotEmpty && widget.lyrics.isNotEmpty && oldWidget.lyrics.first.text != widget.lyrics.first.text)) {
       _keys = List.generate(widget.lyrics.length, (_) => GlobalKey());
       _currentIndex = 0;
     }
@@ -87,6 +97,7 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _positionSub?.cancel();
     _scrollController.dispose();
     super.dispose();
@@ -103,7 +114,7 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
       );
     }
 
-    return ListView.builder(
+    return SingleChildScrollView(
       controller: _scrollController,
       physics: const BouncingScrollPhysics(),
       // Top & bottom padding allow first/last items to scroll to center
@@ -111,38 +122,40 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
         vertical: MediaQuery.of(context).size.height * 0.38,
         horizontal: 32,
       ),
-      itemCount: widget.lyrics.length,
-      itemBuilder: (context, index) {
-        final isActive = index == _currentIndex;
-        return GestureDetector(
-          key: _keys[index],
-          onTap: () {
-            final mp = context.read<MusicProvider>();
-            mp.seek(widget.lyrics[index].time);
-          },
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: isActive ? 12.0 : 8.0),
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 350),
-              curve: Curves.easeOutCubic,
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontSize: isActive ? _activeFontSize : _inactiveFontSize,
-                fontWeight: isActive ? FontWeight.w900 : FontWeight.w500,
-                color: isActive
-                    ? Colors.white
-                    : Colors.white.withOpacity(0.25),
-                height: 1.35,
-                letterSpacing: isActive ? 0.3 : 0,
-              ),
-              child: Text(
-                widget.lyrics[index].text,
-                textAlign: TextAlign.left,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: List.generate(widget.lyrics.length, (index) {
+          final isActive = index == _currentIndex;
+          return GestureDetector(
+            key: _keys[index],
+            onTap: () {
+              final mp = context.read<MusicProvider>();
+              mp.seek(widget.lyrics[index].time);
+            },
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: isActive ? 12.0 : 8.0),
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeOutCubic,
+                style: TextStyle(
+                  fontFamily: 'Roboto',
+                  fontSize: isActive ? _activeFontSize : _inactiveFontSize,
+                  fontWeight: isActive ? FontWeight.w900 : FontWeight.w500,
+                  color: isActive
+                      ? Colors.white
+                      : Colors.white.withOpacity(0.25),
+                  height: 1.35,
+                  letterSpacing: isActive ? 0.3 : 0,
+                ),
+                child: Text(
+                  widget.lyrics[index].text,
+                  textAlign: TextAlign.left,
+                ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        }),
+      ),
     );
   }
 }

@@ -13,6 +13,7 @@ MusicK is a modern, high-performance music streaming application built with a **
 - **Audio Streaming**: Seamless background playback with full audio controls (Loop, Shuffle, Next/Previous) using `just_audio`.
 - **Dynamic MiniPlayer**: Persistent player across all screens that expands into a beautiful full-screen player.
 - **Playlist Management**: Create, edit, and organize your favorite tracks into custom playlists.
+- **Real-time Lyrics & Translation**: Synced LRC lyrics, Romaji/Pinyin generator, and AI-powered multi-language translation.
 - **Real-time Search**: Fast and intelligent search capabilities to discover new music.
 - **Responsive Layout**: Optimized for both mobile devices and desktop web browsers.
 
@@ -28,6 +29,7 @@ MusicK is a modern, high-performance music streaming application built with a **
 - **Framework**: FastAPI (Python)
 - **Server**: Uvicorn
 - **Integration**: yt-dlp (for audio extraction)
+- **Database**: SQLite (for playlists and liked songs)
 - **Architecture**: RESTful APIs with asynchronous processing.
 
 ##  Getting Started
@@ -38,19 +40,32 @@ MusicK is a modern, high-performance music streaming application built with a **
 - FFmpeg (for audio processing)
 
 ### Backend Setup
-```bash
+
+**For Windows (PowerShell):**
+```powershell
 cd backend
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m uvicorn app.main:app --reload
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+**For macOS / Linux:**
+```bash
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ### Frontend Setup
+
+To run on Web without CORS issues (Chrome):
 ```bash
 cd frontend
 flutter pub get
-flutter run
+flutter run -d chrome --web-port=3000 --web-browser-flag="--disable-web-security"
 ```
 
 ##  Screenshots

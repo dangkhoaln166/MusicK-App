@@ -9,6 +9,8 @@ import '../models/lyric_line.dart';
 import '../services/api_service.dart';
 import '../widgets/synced_lyrics_widget.dart';
 
+enum LyricsLanguage { original, romaji, translatedVi, translatedEn }
+
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({Key? key}) : super(key: key);
 
@@ -20,6 +22,12 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
   late AnimationController _animationController;
   Track? _cachedTrack;
   Future<Map<String, dynamic>?>? _lyricsFuture;
+  
+  LyricsLanguage _lyricsLanguage = LyricsLanguage.original;
+  bool _isTranslating = false;
+  
+  // Cache for lyrics variations for current track
+  final Map<LyricsLanguage, Map<String, dynamic>> _lyricsCache = {};
 
   @override
   void initState() {
@@ -39,11 +47,18 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     final track = mp.currentTrack;
     if (track != null && track.videoId != _cachedTrack?.videoId) {
       _cachedTrack = track;
-      final cleanTitle = track.title.split(RegExp(r'[\(\[|]'))[0].trim();
-      _lyricsFuture = ApiService().getLyrics(cleanTitle);
+      _lyricsCache.clear();
+      _lyricsLanguage = LyricsLanguage.original;
+      
+      _lyricsFuture = ApiService().getLyrics(track.title, videoId: track.videoId).then((data) {
+        if (data != null && mounted) {
+          _lyricsCache[LyricsLanguage.original] = data;
+        }
+        return data;
+      });
     }
   }
-
+  
   void _syncAnimation(bool isPlaying) {
     if (isPlaying && !_animationController.isAnimating) {
       _animationController.repeat();
@@ -140,7 +155,7 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
       children: [
         Expanded(
           flex: 4,
-          child: Center(child: _buildAlbumArt(track.thumbnail, imageSize)),
+          child: Center(child: _buildAlbumArt(track.thumbnail, imageSize, track)),
         ),
         Expanded(
           flex: 5,
@@ -155,10 +170,52 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     return Column(
       children: [
         const SizedBox(height: 20),
-        _buildAlbumArt(track.thumbnail, imageSize),
+        _buildAlbumArt(track.thumbnail, imageSize, track),
         const SizedBox(height: 20),
         Expanded(child: _buildLyricsView(track)),
       ],
+    );
+  }
+
+  void _showChangeCoverDialog(BuildContext context, Track track) {
+    final TextEditingController urlController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Thay đổi ảnh bìa', style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.grey.shade900,
+        content: TextField(
+          controller: urlController,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'Dán đường link ảnh (URL) vào đây...',
+            hintStyle: TextStyle(color: Colors.white54),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text('Hủy', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (urlController.text.isNotEmpty) {
+                final success = await ApiService().updateThumbnail(track.videoId, urlController.text);
+                if (success) {
+                  setState(() {
+                    track.thumbnail = urlController.text;
+                  });
+                  if (mounted) CustomToast.show(context, 'Cập nhật ảnh bìa thành công!');
+                } else {
+                  if (mounted) CustomToast.show(context, 'Có lỗi xảy ra!');
+                }
+              }
+              if (mounted) Navigator.pop(c);
+            },
+            child: const Text('Lưu', style: TextStyle(color: Colors.blueAccent)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -166,79 +223,300 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     return FutureBuilder<Map<String, dynamic>?>(
       future: _lyricsFuture,
       builder: (context, snapshot) {
+        Widget content;
+        
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: Colors.white24));
-        }
+          content = const Center(child: CircularProgressIndicator(color: Colors.white24));
+        } else {
+          final originalData = snapshot.data;
+          if (originalData == null || (originalData['syncedLyrics'] == null && originalData['plainLyrics'] == null)) {
+            content = const Center(child: Text("Lyrics not available", style: TextStyle(color: Colors.white54, fontSize: 18)));
+          } else {
+            // Determine data to show based on language
+            var dataToShow = originalData;
+            if (_lyricsCache.containsKey(_lyricsLanguage)) {
+              dataToShow = _lyricsCache[_lyricsLanguage]!;
+            }
 
-        final data = snapshot.data;
-        if (data == null || (data['syncedLyrics'] == null && data['plainLyrics'] == null)) {
-          return const Center(child: Text("Lyrics not available", style: TextStyle(color: Colors.white54, fontSize: 18)));
-        }
-
-        if (data['syncedLyrics'] != null) {
-          final lines = LyricLine.parseLrc(data['syncedLyrics']);
-          if (lines.isNotEmpty) {
-            return SyncedLyricsWidget(lyrics: lines);
+            if (dataToShow['syncedLyrics'] != null && dataToShow['syncedLyrics'].toString().trim().isNotEmpty) {
+              final lines = LyricLine.parseLrc(dataToShow['syncedLyrics']);
+              if (lines.isNotEmpty) {
+                content = SyncedLyricsWidget(lyrics: lines);
+              } else {
+                content = const Center(child: Text("Invalid synced lyrics", style: TextStyle(color: Colors.white54, fontSize: 18)));
+              }
+            } else {
+              // Fallback to plain lyrics
+              content = SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
+                child: Text(
+                  dataToShow['plainLyrics'] ?? '',
+                  style: const TextStyle(fontSize: 20, height: 2.0, color: Colors.white70),
+                  textAlign: TextAlign.center,
+                ),
+              );
+            }
           }
         }
-
-        // Fallback to plain lyrics
-        return SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
-          child: Text(
-            data['plainLyrics'] ?? '',
-            style: const TextStyle(fontSize: 20, height: 2.0, color: Colors.white70),
-            textAlign: TextAlign.center,
-          ),
+        
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            content,
+            Positioned(
+              top: 16,
+              right: 16,
+              child: _buildLanguageToggleBtn(),
+            ),
+          ],
         );
       },
     );
   }
 
-  Widget _buildAlbumArt(String? thumbnailUrl, double size) {
-    return Container(
-      height: size,
-      width: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.6),
-            blurRadius: 30,
-            offset: const Offset(0, 15),
-          ),
-        ],
-      ),
-      child: RepaintBoundary(
-        child: RotationTransition(
-          turns: _animationController,
-          child: Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.black54, width: 8),
-              image: DecorationImage(
-                image: thumbnailUrl != null
-                  ? NetworkImage(thumbnailUrl)
-                  : const AssetImage('assets/placeholder.png') as ImageProvider,
-                fit: BoxFit.cover,
-              ),
+  Widget _buildLanguageToggleBtn() {
+    String label = 'Gốc';
+    if (_lyricsLanguage == LyricsLanguage.romaji) label = 'Latin';
+    if (_lyricsLanguage == LyricsLanguage.translatedVi) label = 'Tiếng Việt';
+    if (_lyricsLanguage == LyricsLanguage.translatedEn) label = 'Tiếng Anh';
+
+    final originalData = _lyricsCache[LyricsLanguage.original];
+    final lang = originalData?['lang'] ?? 'unknown';
+
+    PopupMenuItem<LyricsLanguage> _buildMenuItem(LyricsLanguage value, String text, IconData icon) {
+      final isSelected = _lyricsLanguage == value;
+      return PopupMenuItem<LyricsLanguage>(
+        value: value,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: isSelected ? Colors.deepPurpleAccent.shade100 : Colors.white70),
+            const SizedBox(width: 12),
+            Text(
+              text, 
+              style: TextStyle(
+                color: isSelected ? Colors.deepPurpleAccent.shade100 : Colors.white,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                fontSize: 14,
+              )
             ),
-            child: Center(
-              child: Container(
-                height: size * 0.15,
-                width: size * 0.15,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.black87,
-                  border: Border.all(color: Colors.white24, width: 2),
+            const SizedBox(width: 16), // Spacing before checkmark
+            if (isSelected)
+              Icon(Icons.check_circle, size: 18, color: Colors.deepPurpleAccent.shade100)
+            else
+              const SizedBox(width: 18), // Placeholder for alignment
+          ],
+        ),
+      );
+    }
+
+    List<PopupMenuEntry<LyricsLanguage>> menuItems = [
+      _buildMenuItem(LyricsLanguage.original, 'Gốc (Original)', Icons.library_music),
+    ];
+
+    if (lang == 'vi') {
+      menuItems.add(const PopupMenuDivider(height: 1));
+      menuItems.add(_buildMenuItem(LyricsLanguage.translatedEn, 'Dịch sang Tiếng Anh', Icons.g_translate));
+    } else if (lang == 'en') {
+      menuItems.add(const PopupMenuDivider(height: 1));
+      menuItems.add(_buildMenuItem(LyricsLanguage.translatedVi, 'Dịch sang Tiếng Việt', Icons.g_translate));
+    } else {
+      menuItems.add(const PopupMenuDivider(height: 1));
+      menuItems.add(_buildMenuItem(LyricsLanguage.romaji, 'Phiên âm (Latin)', Icons.sort_by_alpha));
+      menuItems.add(const PopupMenuDivider(height: 1));
+      menuItems.add(_buildMenuItem(LyricsLanguage.translatedVi, 'Dịch sang Tiếng Việt', Icons.translate));
+      menuItems.add(_buildMenuItem(LyricsLanguage.translatedEn, 'Dịch sang Tiếng Anh', Icons.g_translate));
+    }
+
+    return PopupMenuButton<LyricsLanguage>(
+      color: Colors.grey.shade900,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 8,
+      offset: const Offset(0, 40),
+      onSelected: (LyricsLanguage result) async {
+        if (_lyricsLanguage == result) return;
+
+        if (_lyricsCache[LyricsLanguage.original] == null || _lyricsCache[LyricsLanguage.original]?['syncedLyrics'] == null) {
+          if (mounted) CustomToast.show(context, 'Chưa có lời bài hát để dịch');
+          return;
+        }
+
+        if (result == LyricsLanguage.original || _lyricsCache.containsKey(result)) {
+          setState(() {
+            _lyricsLanguage = result;
+          });
+          return;
+        }
+
+        // Need to translate
+        setState(() {
+          _isTranslating = true;
+        });
+
+        String targetLang = 'vi';
+        if (result == LyricsLanguage.translatedEn) targetLang = 'en';
+
+        final originalLrc = _lyricsCache[LyricsLanguage.original]!['syncedLyrics'];
+        final res = await ApiService().translateLyrics(originalLrc, targetLang: targetLang);
+        
+        if (res != null && mounted) {
+          final originalData = _lyricsCache[LyricsLanguage.original]!;
+          
+          final transKey = targetLang == 'en' ? LyricsLanguage.translatedEn : LyricsLanguage.translatedVi;
+          
+          bool translationSuccess = res['translated'] != null && res['translated'].toString().trim().isNotEmpty;
+          
+          if (translationSuccess) {
+            _lyricsCache[transKey] = {
+              'plainLyrics': originalData['plainLyrics'],
+              'syncedLyrics': res['translated']
+            };
+          }
+          
+          if (res['romaji'] != null && res['romaji'].toString().trim().isNotEmpty) {
+            _lyricsCache[LyricsLanguage.romaji] = {
+              'plainLyrics': originalData['plainLyrics'],
+              'syncedLyrics': res['romaji']
+            };
+          }
+          
+          if (result == transKey && !translationSuccess) {
+            if (mounted) {
+              CustomToast.show(context, 'Lỗi khi dịch lời bài hát (Google Translate quá tải, thử lại sau)');
+              setState(() {
+                _isTranslating = false;
+              });
+            }
+            return;
+          }
+          
+          setState(() {
+            _lyricsLanguage = result;
+            _isTranslating = false;
+          });
+        } else {
+          if (mounted) {
+            CustomToast.show(context, 'Lỗi khi dịch lời bài hát (có thể quá tải, thử lại sau)');
+            setState(() {
+              _isTranslating = false;
+            });
+          }
+        }
+      },
+      itemBuilder: (BuildContext context) => menuItems,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white24, width: 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.translate, size: 16, color: Colors.deepPurpleAccent.shade100),
+            const SizedBox(width: 8),
+            _isTranslating 
+              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70))
+              : Text(
+                  label,
+                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
                 ),
-              ),
-            ),
-          ),
+            const SizedBox(width: 6),
+            const Icon(Icons.keyboard_arrow_down, size: 18, color: Colors.white70),
+          ],
         ),
       ),
     );
   }
+
+  Widget _buildAlbumArt(String? url, double size, Track track) {
+    // Upscale the thumbnail URL from 120x120 to 800x800 for the player screen
+    final highResUrl = url?.replaceAll(RegExp(r'=w\d+-h\d+'), '=w800-h800');
+
+    return GestureDetector(
+      onLongPress: () => _showChangeCoverDialog(context, track),
+      child: Container(
+        height: size,
+        width: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.6),
+              blurRadius: 30,
+              offset: const Offset(0, 15),
+            ),
+          ],
+        ),
+        child: RotationTransition(
+          turns: _animationController,
+          child: RepaintBoundary(
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.black54, width: 8),
+                color: Colors.grey.shade900,
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipOval(
+                    child: highResUrl != null
+                        ? Image.network(
+                            highResUrl,
+                            width: size,
+                            height: size,
+                            fit: BoxFit.cover,
+                            filterQuality: FilterQuality.high,
+                            errorBuilder: (context, error, stackTrace) => url != null 
+
+                              ? Image.network(
+                                  url,
+                                  width: size,
+                                  height: size,
+                                  fit: BoxFit.cover,
+                                  filterQuality: FilterQuality.high,
+                                  errorBuilder: (context, error, stackTrace) => Container(
+                                    width: size,
+                                    height: size,
+                                    color: Colors.grey.shade800,
+                                    child: const Icon(Icons.music_note, color: Colors.white54, size: 120),
+                                  ),
+                                )
+                              : Container(
+                                  width: size,
+                                  height: size,
+                                  color: Colors.grey.shade800,
+                                  child: const Icon(Icons.music_note, color: Colors.white54, size: 120),
+                                ),
+                          )
+                        : Container(
+                            width: size,
+                            height: size,
+                            color: Colors.grey.shade800,
+                            child: const Icon(Icons.music_note, color: Colors.white54, size: 120),
+                          ),
+                  ),
+                  Center(
+                child: Container(
+                  height: size * 0.15,
+                  width: size * 0.15,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.black87,
+                    border: Border.all(color: Colors.white24, width: 2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  ),
+);
+}
 
   Widget _buildBottomPlayerBar(BuildContext context, Track track, bool isWide) {
     if (isWide) {
@@ -315,7 +593,18 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
         if (track.thumbnail != null)
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
-            child: Image.network(track.thumbnail!, width: 56, height: 56, fit: BoxFit.cover),
+            child: Image.network(
+              track.thumbnail!, 
+              width: 56, 
+              height: 56, 
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(
+                width: 56,
+                height: 56,
+                color: Colors.grey.shade800,
+                child: const Icon(Icons.music_note, color: Colors.white54),
+              ),
+            ),
           ),
         const SizedBox(width: 16),
         Expanded(
@@ -344,11 +633,14 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
   }
 
   Widget _buildProgressBar(BuildContext context) {
-    return Consumer<MusicProvider>(
-      builder: (context, musicProvider, _) {
+    final musicProvider = Provider.of<MusicProvider>(context, listen: false);
+    return StreamBuilder<Duration>(
+      stream: musicProvider.audioPlayer.positionStream,
+      builder: (context, snapshot) {
+        final position = snapshot.data ?? musicProvider.position;
         return Row(
           children: [
-            Text(_formatDuration(musicProvider.position), style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+            Text(_formatDuration(position), style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
             Expanded(
               child: SliderTheme(
                 data: SliderTheme.of(context).copyWith(
@@ -362,7 +654,7 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                 child: Slider(
                   min: 0,
                   max: musicProvider.duration.inSeconds.toDouble() > 0 ? musicProvider.duration.inSeconds.toDouble() : 1.0,
-                  value: musicProvider.position.inSeconds.toDouble().clamp(0, musicProvider.duration.inSeconds.toDouble()),
+                  value: position.inSeconds.toDouble().clamp(0, musicProvider.duration.inSeconds.toDouble()),
                   onChanged: (value) {
                     musicProvider.seek(Duration(seconds: value.toInt()));
                   },
@@ -399,13 +691,19 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
               onPressed: () => musicProvider.seekBackward(),
             ),
             const SizedBox(width: 5),
-            Container(
-              decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-              child: IconButton(
-                icon: Icon(musicProvider.isPlaying ? Icons.pause : Icons.play_arrow, size: 36, color: Colors.black),
-                onPressed: () => musicProvider.togglePlayPause(),
+              Container(
+                decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                child: IconButton(
+                  icon: Icon(
+                    musicProvider.isCompleted 
+                        ? Icons.replay 
+                        : (musicProvider.isPlaying ? Icons.pause : Icons.play_arrow), 
+                    size: 36, 
+                    color: Colors.black
+                  ),
+                  onPressed: () => musicProvider.togglePlayPause(),
+                ),
               ),
-            ),
             const SizedBox(width: 5),
             IconButton(
               icon: const Icon(Icons.forward_10, size: 28),
@@ -595,12 +893,25 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                           padding: const EdgeInsets.all(32.0),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              Icon(Icons.library_music_outlined, size: 60, color: Colors.white24),
+                            children: [
+                              const Icon(Icons.library_music_outlined, size: 60, color: Colors.white24),
                               SizedBox(height: 16),
-                              Text("No Playlists Found", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                              SizedBox(height: 8),
-                              Text("Go to the Library tab to create your first playlist!", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
+                              const Text("No Playlists Found", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 8),
+                              const Text("Go to the Library tab to create your first playlist!", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blueAccent,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                ),
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _showCreatePlaylistDialog(context);
+                                },
+                                icon: const Icon(Icons.add),
+                                label: const Text('Create Playlist', style: TextStyle(fontWeight: FontWeight.bold)),
+                              ),
                             ],
                           ),
                         );
@@ -645,6 +956,50 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  void _showCreatePlaylistDialog(BuildContext context) {
+    final TextEditingController controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: Colors.grey.shade900,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Give your playlist a name', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          content: TextField(
+            controller: controller,
+            style: const TextStyle(color: Colors.white, fontSize: 18),
+            decoration: InputDecoration(
+              hintText: 'My Playlist',
+              hintStyle: TextStyle(color: Colors.grey.shade600),
+              enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+              focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
+            ),
+            autofocus: true,
+          ),
+          actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white54, fontSize: 16)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blueAccent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              onPressed: () {
+                Provider.of<MusicProvider>(context, listen: false).createPlaylist(controller.text);
+                Navigator.pop(ctx);
+              },
+              child: const Text('Create', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ],
         );
       },
     );

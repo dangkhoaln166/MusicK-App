@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../providers/music_provider.dart';
+import '../providers/settings_provider.dart';
 import '../utils/custom_toast.dart';
 import 'player_screen.dart';
+import 'channel_detail_screen.dart';
 
 class SearchTab extends StatefulWidget {
   const SearchTab({Key? key}) : super(key: key);
@@ -76,6 +78,11 @@ class _SearchTabState extends State<SearchTab> {
       _isTyping = true;
     });
     if (_debounce?.isActive ?? false) _debounce!.cancel();
+    if (query.isEmpty) {
+      Provider.of<MusicProvider>(context, listen: false).clearSuggestions();
+      setState(() => _isTyping = false);
+      return;
+    }
     _debounce = Timer(const Duration(milliseconds: 500), () {
       Provider.of<MusicProvider>(context, listen: false).fetchSuggestions(query);
     });
@@ -95,13 +102,19 @@ class _SearchTabState extends State<SearchTab> {
   @override
   Widget build(BuildContext context) {
     final musicProvider = Provider.of<MusicProvider>(context);
+    final settings = Provider.of<SettingsProvider>(context);
+    final isDark = settings.isDarkMode;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final bgColor = isDark ? Colors.black : Colors.white;
+    final searchBgColor = isDark ? Colors.grey.shade900 : Colors.grey.shade100;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: bgColor,
       appBar: AppBar(
-        title: const Text('MusicK', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-        backgroundColor: Colors.black,
+        title: Text('MusicK', style: TextStyle(fontWeight: FontWeight.bold, color: textColor)),
+        backgroundColor: bgColor,
         elevation: 0,
+        iconTheme: IconThemeData(color: textColor),
       ),
       body: Column(
         children: [
@@ -110,7 +123,7 @@ class _SearchTabState extends State<SearchTab> {
             padding: const EdgeInsets.all(16.0),
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.grey.shade900,
+                color: searchBgColor,
                 borderRadius: BorderRadius.circular(30),
               ),
               child: Row(
@@ -118,12 +131,12 @@ class _SearchTabState extends State<SearchTab> {
                   Expanded(
                     child: TextField(
                       controller: _searchController,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        hintText: 'Search songs, artists, or links...',
-                        hintStyle: TextStyle(color: Colors.grey),
+                      style: TextStyle(color: textColor),
+                      decoration: InputDecoration(
+                        hintText: settings.t('search_placeholder'),
+                        hintStyle: const TextStyle(color: Colors.grey),
                         border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                       ),
                       onChanged: _onSearchChanged,
                       onSubmitted: _performSearch,
@@ -150,14 +163,17 @@ class _SearchTabState extends State<SearchTab> {
           
           // Results list
           Expanded(
-            child: _isTyping && musicProvider.suggestions.isNotEmpty
-                ? ListView.builder(
+            child: _searchController.text.isEmpty
+                ? _buildHistoryView(context, musicProvider, textColor)
+                : _isTyping && musicProvider.suggestions.isNotEmpty
+                    ? ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 100),
                     itemCount: musicProvider.suggestions.length,
                     itemBuilder: (context, index) {
                       final suggestion = musicProvider.suggestions[index];
                       return ListTile(
                         leading: const Icon(Icons.search, color: Colors.grey),
-                        title: Text(suggestion, style: const TextStyle(color: Colors.white)),
+                        title: Text(suggestion, style: TextStyle(color: textColor)),
                         onTap: () => _performSearch(suggestion),
                       );
                     },
@@ -165,27 +181,50 @@ class _SearchTabState extends State<SearchTab> {
                 : musicProvider.isLoading
                     ? const Center(child: CircularProgressIndicator(color: Colors.blueAccent))
                     : ListView.builder(
+                        padding: const EdgeInsets.only(bottom: 100),
                         controller: _scrollController,
-                        itemCount: musicProvider.searchResults.length + (musicProvider.isLoadingMore ? 1 : 0),
+                        itemCount: musicProvider.searchResults.length + (musicProvider.isLoadingMore ? 1 : 0) + (musicProvider.searchChannels.isNotEmpty ? 1 : 0),
                         itemBuilder: (context, index) {
-                          if (index == musicProvider.searchResults.length) {
+                          // 1. Show Channels Section first if it exists
+                          if (musicProvider.searchChannels.isNotEmpty && index == 0) {
+                            return _buildChannelsSection(context, musicProvider.searchChannels, textColor);
+                          }
+                          
+                          // 2. Calculate actual track index
+                          final trackIndex = musicProvider.searchChannels.isNotEmpty ? index - 1 : index;
+                          
+                          // 3. Show Loading Indicator at the end
+                          if (trackIndex == musicProvider.searchResults.length) {
                             return const Padding(
                               padding: EdgeInsets.all(16.0),
                               child: Center(child: CircularProgressIndicator(color: Colors.blueAccent)),
                             );
                           }
-                          final track = musicProvider.searchResults[index];
+                          
+                          // 4. Show Track Item
+                          final track = musicProvider.searchResults[trackIndex];
                           return ListTile(
                             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             leading: ClipRRect(
                               borderRadius: BorderRadius.circular(8),
                               child: track.thumbnail != null
-                                  ? Image.network(track.thumbnail!, width: 60, height: 60, fit: BoxFit.cover)
+                                  ? Image.network(
+                                      track.thumbnail!,
+                                      width: 60,
+                                      height: 60,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) => Container(
+                                        width: 60,
+                                        height: 60,
+                                        color: Colors.grey.shade800,
+                                        child: const Icon(Icons.music_note, color: Colors.white54),
+                                      ),
+                                    )
                                   : Container(width: 60, height: 60, color: Colors.grey.shade800),
                             ),
                             title: Text(
                               track.title,
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -196,6 +235,21 @@ class _SearchTabState extends State<SearchTab> {
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                IconButton(
+                                  icon: Icon(
+                                    musicProvider.isFavorite(track) ? Icons.favorite : Icons.favorite_border,
+                                    color: musicProvider.isFavorite(track) ? Colors.greenAccent : Colors.blueAccent,
+                                  ),
+                                  onPressed: () {
+                                    musicProvider.toggleFavorite(track);
+                                    CustomToast.show(
+                                      context,
+                                      musicProvider.isFavorite(track) ? settings.t('added_to_liked') : settings.t('removed_from_liked'),
+                                      icon: musicProvider.isFavorite(track) ? Icons.favorite : Icons.favorite_border,
+                                      color: musicProvider.isFavorite(track) ? Colors.greenAccent : (isDark ? Colors.white54 : Colors.black54),
+                                    );
+                                  },
+                                ),
                                 IconButton(
                                   icon: const Icon(Icons.playlist_play, color: Colors.blueAccent),
                                   onPressed: () {
@@ -231,12 +285,164 @@ class _SearchTabState extends State<SearchTab> {
     );
   }
 
+  Widget _buildHistoryView(BuildContext context, MusicProvider provider, Color textColor) {
+    if (provider.searchHistory.isEmpty && provider.channelHistory.isEmpty) {
+      return Center(
+        child: Text("Tìm kiếm bài hát, nghệ sĩ hoặc kênh...", style: TextStyle(color: Colors.grey.shade600)),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 100),
+      children: [
+        if (provider.channelHistory.isNotEmpty)
+          _buildChannelsSection(context, provider.channelHistory, textColor, title: "Kênh đã xem", isHistory: true),
+        if (provider.searchHistory.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 16.0, right: 8.0, top: 16.0, bottom: 8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("Lịch sử tìm kiếm", style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold)),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.grey, size: 20),
+                  onPressed: () => _showClearConfirmation(context, "Xóa lịch sử tìm kiếm?", () {
+                    for (var query in List.from(provider.searchHistory)) {
+                      provider.removeSearchHistory(query);
+                    }
+                  }),
+                ),
+              ],
+            ),
+          ),
+        ...provider.searchHistory.map((query) => ListTile(
+          leading: const Icon(Icons.history, color: Colors.grey),
+          title: Text(query, style: TextStyle(color: textColor)),
+          trailing: IconButton(
+            icon: const Icon(Icons.close, color: Colors.grey, size: 20),
+            onPressed: () => provider.removeSearchHistory(query),
+          ),
+          onTap: () {
+            _searchController.text = query;
+            _performSearch(query);
+          },
+        )).toList(),
+      ],
+    );
+  }
+  
+  void _showClearConfirmation(BuildContext context, String title, VoidCallback onConfirm) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey.shade900,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 18)),
+        content: const Text("Hành động này không thể hoàn tác.", style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Hủy", style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () {
+              onConfirm();
+              Navigator.pop(context);
+            },
+            child: const Text("Xóa", style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChannelsSection(BuildContext context, List channels, Color textColor, {String title = "Kênh", bool isHistory = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 16.0, right: 8.0, top: 16.0, bottom: 8.0),
+          child: Text(title, style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold)),
+        ),
+        SizedBox(
+          height: 130,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            itemCount: channels.length,
+            itemBuilder: (context, index) {
+              final channel = channels[index];
+              return GestureDetector(
+                onTap: () {
+                  Provider.of<MusicProvider>(context, listen: false).addToChannelHistory(channel);
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => ChannelDetailScreen(channel: channel)));
+                },
+                child: Container(
+                  width: 100,
+                  margin: const EdgeInsets.only(right: 12.0),
+                  child: Column(
+                    children: [
+                      Stack(
+                        children: [
+                          Container(
+                            margin: const EdgeInsets.all(4.0),
+                            child: CircleAvatar(
+                              radius: 40,
+                              backgroundImage: channel.avatar != null ? NetworkImage(channel.avatar!) : null,
+                              backgroundColor: Colors.grey.shade800,
+                              child: channel.avatar == null ? const Icon(Icons.person, color: Colors.white54, size: 40) : null,
+                            ),
+                          ),
+                          if (isHistory)
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              child: GestureDetector(
+                                onTap: () => _showClearConfirmation(context, "Xóa kênh này khỏi lịch sử?", () {
+                                  Provider.of<MusicProvider>(context, listen: false).removeChannelHistory(channel.id);
+                                }),
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black87,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white24, width: 1),
+                                  ),
+                                  child: const Icon(Icons.close, color: Colors.white, size: 14),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        channel.title,
+                        style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   void _showAddToPlaylistSheet(BuildContext context, track) {
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
+    final isDark = settings.isDarkMode;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final bgColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+
     showDialog(
       context: context,
       builder: (context) {
         return Dialog(
-          backgroundColor: const Color(0xFF1E1E1E),
+          backgroundColor: bgColor,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           child: Container(
             width: 400,
@@ -249,9 +455,9 @@ class _SearchTabState extends State<SearchTab> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Add to Playlist', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                      Text('Add to Playlist', style: TextStyle(color: textColor, fontSize: 20, fontWeight: FontWeight.bold)),
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white54),
+                        icon: Icon(Icons.close, color: isDark ? Colors.white54 : Colors.black54),
                         onPressed: () => Navigator.pop(context),
                       ),
                     ],
@@ -266,12 +472,25 @@ class _SearchTabState extends State<SearchTab> {
                           padding: const EdgeInsets.all(32.0),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              Icon(Icons.library_music_outlined, size: 60, color: Colors.white24),
+                            children: [
+                              const Icon(Icons.library_music_outlined, size: 60, color: Colors.white24),
                               SizedBox(height: 16),
-                              Text("No Playlists Found", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                              SizedBox(height: 8),
-                              Text("Go to the Library tab to create your first playlist!", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
+                              const Text("No Playlists Found", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 8),
+                              const Text("Go to the Library tab to create your first playlist!", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blueAccent,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                ),
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _showCreatePlaylistDialog(context);
+                                },
+                                icon: const Icon(Icons.add),
+                                label: const Text('Create Playlist', style: TextStyle(fontWeight: FontWeight.bold)),
+                              ),
                             ],
                           ),
                         );
@@ -291,9 +510,9 @@ class _SearchTabState extends State<SearchTab> {
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(8),
                                 image: playlist.coverImage != null ? DecorationImage(image: NetworkImage(playlist.coverImage!), fit: BoxFit.cover) : null,
-                                color: Colors.grey.shade800,
+                                color: isDark ? Colors.grey.shade800 : Colors.grey.shade300,
                               ),
-                              child: playlist.coverImage == null ? const Icon(Icons.music_note, color: Colors.white54) : null,
+                              child: playlist.coverImage == null ? const Icon(Icons.music_note, color: Colors.grey) : null,
                             ),
                             title: Text(playlist.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                             subtitle: Text('${playlist.tracks.length} tracks', style: TextStyle(color: Colors.grey.shade500)),
@@ -316,6 +535,50 @@ class _SearchTabState extends State<SearchTab> {
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  void _showCreatePlaylistDialog(BuildContext context) {
+    final TextEditingController controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: Colors.grey.shade900,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Give your playlist a name', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          content: TextField(
+            controller: controller,
+            style: const TextStyle(color: Colors.white, fontSize: 18),
+            decoration: InputDecoration(
+              hintText: 'My Playlist',
+              hintStyle: TextStyle(color: Colors.grey.shade600),
+              enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+              focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
+            ),
+            autofocus: true,
+          ),
+          actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white54, fontSize: 16)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blueAccent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              onPressed: () {
+                Provider.of<MusicProvider>(context, listen: false).createPlaylist(controller.text);
+                Navigator.pop(ctx);
+              },
+              child: const Text('Create', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ],
         );
       },
     );

@@ -1,21 +1,74 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/track.dart';
+import '../models/playlist.dart';
+import '../models/channel.dart';
 
 class ApiService {
   // Use 10.0.2.2 for Android emulator to access host localhost
-  // Use localhost for iOS simulator or Desktop
+  // Use 127.0.0.1 instead of localhost to prevent IPv4/IPv6 resolution issues on Windows
   static const String baseUrl = 'http://127.0.0.1:8000/api';
 
-  Future<List<Track>> searchTracks(String query, {int page = 1}) async {
+  Future<Map<String, dynamic>> searchAll(String query, {int page = 1}) async {
     final response = await http.get(Uri.parse('$baseUrl/search?q=$query&page=$page'));
     
     if (response.statusCode == 200) {
-      final data = json.decode(response.body);
+      final data = json.decode(utf8.decode(response.bodyBytes));
+      final List results = data['results'] ?? [];
+      final List channelsData = data['channels'] ?? [];
+      
+      return {
+        'tracks': results.map((json) => Track.fromJson(json)).toList(),
+        'channels': channelsData.map((json) => Channel.fromJson(json)).toList(),
+      };
+    } else {
+      throw Exception('Failed to load search results');
+    }
+  }
+
+  Future<List<Track>> getChannelVideos(String channelId, {String sortBy = 'p', int page = 1}) async {
+    final response = await http.get(Uri.parse('$baseUrl/channels/$channelId/videos?sort_by=$sortBy&page=$page'));
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(utf8.decode(response.bodyBytes));
       final List results = data['results'] ?? [];
       return results.map((json) => Track.fromJson(json)).toList();
     } else {
-      throw Exception('Failed to load search results');
+      throw Exception('Failed to load channel videos');
+    }
+  }
+
+  Future<Map<String, List<Track>>> getExplore() async {
+    final response = await http.get(Uri.parse('$baseUrl/explore'));
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(utf8.decode(response.bodyBytes));
+      final List trendingData = data['trending'] ?? [];
+      final List newReleasesData = data['new_releases'] ?? [];
+      
+      return {
+        'trending': (trendingData as List).map((json) => Track.fromJson(Map<String, dynamic>.from(json as Map))).toList(),
+        'newReleases': (newReleasesData as List).map((json) => Track.fromJson(Map<String, dynamic>.from(json as Map))).toList(),
+      };
+    } else {
+      throw Exception('Failed to load explore data');
+    }
+  }
+
+  Future<Map<String, List<Track>>> getCharts() async {
+    final response = await http.get(Uri.parse('$baseUrl/charts'));
+    
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+      Map<String, List<Track>> charts = {};
+      data.forEach((key, value) {
+        if (value is List) {
+          charts[key] = value.map((json) => Track.fromJson(Map<String, dynamic>.from(json as Map))).toList();
+        }
+      });
+      return charts;
+    } else {
+      throw Exception('Failed to load charts data');
     }
   }
 
@@ -42,14 +95,220 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>?> getLyrics(String query) async {
-    final response = await http.get(Uri.parse('$baseUrl/lyrics?q=$query'));
-    
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return data['lyrics'];
-    } else {
-      return null;
+  Future<Map<String, dynamic>?> getLyrics(String query, {String? videoId}) async {
+    String url = '$baseUrl/lyrics?q=${Uri.encodeComponent(query)}';
+    if (videoId != null && videoId.isNotEmpty) {
+      url += '&video_id=${Uri.encodeComponent(videoId)}';
     }
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) {
+      return json.decode(response.body)['lyrics'];
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> translateLyrics(String lyrics, {String targetLang = 'vi'}) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/translate_lyrics'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'lyrics': lyrics,
+          'target_lang': targetLang,
+        }),
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(utf8.decode(response.bodyBytes));
+        return {
+          'translated': data['translated'] ?? '',
+          'romaji': data['romaji'] ?? '',
+        };
+      }
+    } catch (e) {
+      print("translateLyrics error: $e");
+    }
+    return null;
+  }
+
+  // --- Database API ---
+
+  Future<List<Track>> getFavorites() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/db/favorites'));
+      if (response.statusCode == 200) {
+        final List data = json.decode(response.body);
+        return data.map((json) => Track.fromJson(json)).toList();
+      }
+    } catch(e) {
+      print("getFavorites error: $e");
+    }
+    return [];
+  }
+
+  Future<void> addFavorite(Track track) async {
+    await http.post(
+      Uri.parse('$baseUrl/db/favorites'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(track.toJson()),
+    );
+  }
+
+  Future<void> removeFavorite(String videoId) async {
+    await http.delete(Uri.parse('$baseUrl/db/favorites/$videoId'));
+  }
+
+  // History & Settings
+  Future<List<Track>> getHistory() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/db/history'));
+      if (response.statusCode == 200) {
+        final List data = json.decode(response.body);
+        return data.map((json) => Track.fromJson(json)).toList();
+      }
+    } catch(e) {
+      print("getHistory error: $e");
+    }
+    return [];
+  }
+
+  Future<void> addToHistory(Track track) async {
+    await http.post(
+      Uri.parse('$baseUrl/db/history'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(track.toJson()),
+    );
+  }
+
+  Future<void> removeFromHistory(String videoId) async {
+    await http.delete(Uri.parse('$baseUrl/db/history/$videoId'));
+  }
+
+  Future<Map<String, String>> getSettings() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/db/settings'));
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        Map<String, String> settings = {};
+        data.forEach((key, value) {
+          settings[key] = value?.toString() ?? '';
+        });
+        return settings;
+      }
+    } catch(e) {
+      print("getSettings error: $e");
+    }
+    return {};
+  }
+
+  Future<void> updateSetting(String key, String value) async {
+    await http.post(
+      Uri.parse('$baseUrl/db/settings'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({key: value}),
+    );
+  }
+
+  Future<List<Playlist>> getPlaylists() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/db/playlists'));
+      if (response.statusCode == 200) {
+        final List data = json.decode(response.body);
+        return data.map((json) => Playlist.fromJson(json)).toList();
+      }
+    } catch(e) {
+      print("getPlaylists error: $e");
+    }
+    return [];
+  }
+
+  Future<Playlist?> createPlaylist(String name) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/db/playlists'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'name': name}),
+    );
+    if (response.statusCode == 200) {
+      return Playlist.fromJson(json.decode(response.body));
+    }
+    return null;
+  }
+
+  Future<void> deletePlaylist(String id) async {
+    await http.delete(Uri.parse('$baseUrl/db/playlists/$id'));
+  }
+
+  Future<void> updatePlaylist(String id, String newName, String? newCoverImage) async {
+    await http.put(
+      Uri.parse('$baseUrl/db/playlists/$id'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'name': newName, 'cover_image': newCoverImage}),
+    );
+  }
+
+  Future<void> addTrackToPlaylist(String playlistId, Track track) async {
+    await http.post(
+      Uri.parse('$baseUrl/db/playlists/$playlistId/tracks'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(track.toJson()),
+    );
+  }
+
+  Future<void> removeTrackFromPlaylist(String playlistId, String videoId) async {
+    await http.delete(Uri.parse('$baseUrl/db/playlists/$playlistId/tracks/$videoId'));
+  }
+
+  Future<void> reorderPlaylistTracks(String playlistId, List<String> trackIds) async {
+    await http.put(
+      Uri.parse('$baseUrl/db/playlists/$playlistId/reorder'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(trackIds),
+    );
+  }
+
+  Future<void> reorderFavorites(List<String> trackIds) async {
+    await http.put(
+      Uri.parse('$baseUrl/db/favorites/reorder'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(trackIds),
+    );
+  }
+
+  Future<void> clearFavorites() async {
+    await http.delete(Uri.parse('$baseUrl/db/favorites'));
+  }
+
+  Future<bool> updateThumbnail(String videoId, String imageUrl) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/db/tracks/$videoId/thumbnail'),
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: {'image_url': imageUrl},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Error updating thumbnail: $e');
+      return false;
+    }
+  }
+
+  Future<String?> uploadImage(List<int> bytes, String filename) async {
+    try {
+      var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/db/upload_image'));
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: filename,
+      ));
+      
+      var response = await request.send();
+      if (response.statusCode == 200) {
+        var responseData = await response.stream.bytesToString();
+        var jsonResponse = json.decode(responseData);
+        return jsonResponse['url'];
+      }
+    } catch (e) {
+      print('Error uploading image: $e');
+    }
+    return null;
   }
 }

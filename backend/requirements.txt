@@ -2,3 +2,11 @@ fastapi
 uvicorn
 yt-dlp
 pydantic-settings
+sqlalchemy
+ytmusicapi
+python-multipart
+pykakasi
+pypinyin
+korean_romanizer
+langdetect
+httpx

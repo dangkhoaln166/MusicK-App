@@ -79,3 +79,11 @@ gradlew.bat
 
 # Antigravity artifacts
 .gemini/
+
+# Databases
+*.db
+*.sqlite3
+
+# IDEs
+.vscode/
+.idea/
