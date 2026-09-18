@@ -10,3 +10,4 @@ pypinyin
 korean_romanizer
 langdetect
 httpx
+psycopg2-binary

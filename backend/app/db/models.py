@@ -25,6 +25,7 @@ class Playlist(Base):
     __tablename__ = "playlists"
 
     id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, index=True, default='default')
     name = Column(String, nullable=False)
     cover_image = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -34,6 +35,7 @@ class Playlist(Base):
 class Favorite(Base):
     __tablename__ = "favorites"
 
+    user_id = Column(String, primary_key=True, index=True, default='default')
     track_id = Column(String, ForeignKey("tracks.video_id", ondelete="CASCADE"), primary_key=True)
     position = Column(Integer, default=0)
     track = relationship("Track")
@@ -41,6 +43,7 @@ class Favorite(Base):
 class History(Base):
     __tablename__ = "history"
 
+    user_id = Column(String, primary_key=True, index=True, default='default')
     track_id = Column(String, ForeignKey("tracks.video_id", ondelete="CASCADE"), primary_key=True)
     played_at = Column(DateTime, default=datetime.utcnow)
     track = relationship("Track")
@@ -48,6 +51,7 @@ class History(Base):
 class Setting(Base):
     __tablename__ = "settings"
 
+    user_id = Column(String, primary_key=True, index=True, default='default')
     key = Column(String, primary_key=True, index=True)
     value = Column(String, nullable=False)
 

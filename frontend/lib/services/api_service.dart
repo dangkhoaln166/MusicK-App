@@ -3,14 +3,27 @@ import 'package:http/http.dart' as http;
 import '../models/track.dart';
 import '../models/playlist.dart';
 import '../models/channel.dart';
+import 'device_service.dart';
 
 class ApiService {
-  // Use 10.0.2.2 for Android emulator to access host localhost
-  // Use 127.0.0.1 instead of localhost to prevent IPv4/IPv6 resolution issues on Windows
-  static const String baseUrl = 'http://127.0.0.1:8000/api';
+  // Use Render deployment URL for production and cross-device syncing
+  static const String baseUrl = 'https://musick-app.onrender.com/api';
+
+  static Map<String, String> _getHeaders({Map<String, String>? additionalHeaders}) {
+    final headers = {
+      'X-Device-Id': DeviceService.deviceId,
+    };
+    if (additionalHeaders != null) {
+      headers.addAll(additionalHeaders);
+    }
+    return headers;
+  }
 
   Future<Map<String, dynamic>> searchAll(String query, {int page = 1}) async {
-    final response = await http.get(Uri.parse('$baseUrl/search?q=$query&page=$page'));
+    final response = await http.get(
+      Uri.parse('$baseUrl/search?q=$query&page=$page'),
+      headers: _getHeaders(),
+    );
     
     if (response.statusCode == 200) {
       final data = json.decode(utf8.decode(response.bodyBytes));
@@ -27,7 +40,10 @@ class ApiService {
   }
 
   Future<List<Track>> getChannelVideos(String channelId, {String sortBy = 'p', int page = 1}) async {
-    final response = await http.get(Uri.parse('$baseUrl/channels/$channelId/videos?sort_by=$sortBy&page=$page'));
+    final response = await http.get(
+      Uri.parse('$baseUrl/channels/$channelId/videos?sort_by=$sortBy&page=$page'),
+      headers: _getHeaders(),
+    );
     
     if (response.statusCode == 200) {
       final data = json.decode(utf8.decode(response.bodyBytes));
@@ -39,7 +55,10 @@ class ApiService {
   }
 
   Future<Map<String, List<Track>>> getExplore() async {
-    final response = await http.get(Uri.parse('$baseUrl/explore'));
+    final response = await http.get(
+      Uri.parse('$baseUrl/explore'),
+      headers: _getHeaders(),
+    );
     
     if (response.statusCode == 200) {
       final data = json.decode(utf8.decode(response.bodyBytes));
@@ -56,7 +75,10 @@ class ApiService {
   }
 
   Future<Map<String, List<Track>>> getCharts() async {
-    final response = await http.get(Uri.parse('$baseUrl/charts'));
+    final response = await http.get(
+      Uri.parse('$baseUrl/charts'),
+      headers: _getHeaders(),
+    );
     
     if (response.statusCode == 200) {
       final Map<String, dynamic> data = json.decode(utf8.decode(response.bodyBytes));
@@ -73,7 +95,10 @@ class ApiService {
   }
 
   Future<List<String>> getSuggestions(String query) async {
-    final response = await http.get(Uri.parse('$baseUrl/suggest?q=$query'));
+    final response = await http.get(
+      Uri.parse('$baseUrl/suggest?q=$query'),
+      headers: _getHeaders(),
+    );
     
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
@@ -85,7 +110,10 @@ class ApiService {
   }
 
   Future<StreamInfo> getStream(String videoId) async {
-    final response = await http.get(Uri.parse('$baseUrl/stream/$videoId'));
+    final response = await http.get(
+      Uri.parse('$baseUrl/stream/$videoId'),
+      headers: _getHeaders(),
+    );
     
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
@@ -100,7 +128,10 @@ class ApiService {
     if (videoId != null && videoId.isNotEmpty) {
       url += '&video_id=${Uri.encodeComponent(videoId)}';
     }
-    final response = await http.get(Uri.parse(url));
+    final response = await http.get(
+      Uri.parse(url),
+      headers: _getHeaders(),
+    );
     if (response.statusCode == 200) {
       return json.decode(response.body)['lyrics'];
     }
@@ -111,7 +142,7 @@ class ApiService {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/translate_lyrics'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _getHeaders(additionalHeaders: {'Content-Type': 'application/json'}),
         body: json.encode({
           'lyrics': lyrics,
           'target_lang': targetLang,
@@ -134,7 +165,10 @@ class ApiService {
 
   Future<List<Track>> getFavorites() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/db/favorites'));
+      final response = await http.get(
+        Uri.parse('$baseUrl/db/favorites'),
+        headers: _getHeaders(),
+      );
       if (response.statusCode == 200) {
         final List data = json.decode(response.body);
         return data.map((json) => Track.fromJson(json)).toList();
@@ -148,19 +182,25 @@ class ApiService {
   Future<void> addFavorite(Track track) async {
     await http.post(
       Uri.parse('$baseUrl/db/favorites'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _getHeaders(additionalHeaders: {'Content-Type': 'application/json'}),
       body: json.encode(track.toJson()),
     );
   }
 
   Future<void> removeFavorite(String videoId) async {
-    await http.delete(Uri.parse('$baseUrl/db/favorites/$videoId'));
+    await http.delete(
+      Uri.parse('$baseUrl/db/favorites/$videoId'),
+      headers: _getHeaders(),
+    );
   }
 
   // History & Settings
   Future<List<Track>> getHistory() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/db/history'));
+      final response = await http.get(
+        Uri.parse('$baseUrl/db/history'),
+        headers: _getHeaders(),
+      );
       if (response.statusCode == 200) {
         final List data = json.decode(response.body);
         return data.map((json) => Track.fromJson(json)).toList();
@@ -174,18 +214,24 @@ class ApiService {
   Future<void> addToHistory(Track track) async {
     await http.post(
       Uri.parse('$baseUrl/db/history'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _getHeaders(additionalHeaders: {'Content-Type': 'application/json'}),
       body: json.encode(track.toJson()),
     );
   }
 
   Future<void> removeFromHistory(String videoId) async {
-    await http.delete(Uri.parse('$baseUrl/db/history/$videoId'));
+    await http.delete(
+      Uri.parse('$baseUrl/db/history/$videoId'),
+      headers: _getHeaders(),
+    );
   }
 
   Future<Map<String, String>> getSettings() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/db/settings'));
+      final response = await http.get(
+        Uri.parse('$baseUrl/db/settings'),
+        headers: _getHeaders(),
+      );
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = json.decode(response.body);
         Map<String, String> settings = {};
@@ -203,14 +249,17 @@ class ApiService {
   Future<void> updateSetting(String key, String value) async {
     await http.post(
       Uri.parse('$baseUrl/db/settings'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _getHeaders(additionalHeaders: {'Content-Type': 'application/json'}),
       body: json.encode({key: value}),
     );
   }
 
   Future<List<Playlist>> getPlaylists() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/db/playlists'));
+      final response = await http.get(
+        Uri.parse('$baseUrl/db/playlists'),
+        headers: _getHeaders(),
+      );
       if (response.statusCode == 200) {
         final List data = json.decode(response.body);
         return data.map((json) => Playlist.fromJson(json)).toList();
@@ -224,7 +273,7 @@ class ApiService {
   Future<Playlist?> createPlaylist(String name) async {
     final response = await http.post(
       Uri.parse('$baseUrl/db/playlists'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _getHeaders(additionalHeaders: {'Content-Type': 'application/json'}),
       body: json.encode({'name': name}),
     );
     if (response.statusCode == 200) {
@@ -234,13 +283,16 @@ class ApiService {
   }
 
   Future<void> deletePlaylist(String id) async {
-    await http.delete(Uri.parse('$baseUrl/db/playlists/$id'));
+    await http.delete(
+      Uri.parse('$baseUrl/db/playlists/$id'),
+      headers: _getHeaders(),
+    );
   }
 
   Future<void> updatePlaylist(String id, String newName, String? newCoverImage) async {
     await http.put(
       Uri.parse('$baseUrl/db/playlists/$id'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _getHeaders(additionalHeaders: {'Content-Type': 'application/json'}),
       body: json.encode({'name': newName, 'cover_image': newCoverImage}),
     );
   }
@@ -248,19 +300,22 @@ class ApiService {
   Future<void> addTrackToPlaylist(String playlistId, Track track) async {
     await http.post(
       Uri.parse('$baseUrl/db/playlists/$playlistId/tracks'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _getHeaders(additionalHeaders: {'Content-Type': 'application/json'}),
       body: json.encode(track.toJson()),
     );
   }
 
   Future<void> removeTrackFromPlaylist(String playlistId, String videoId) async {
-    await http.delete(Uri.parse('$baseUrl/db/playlists/$playlistId/tracks/$videoId'));
+    await http.delete(
+      Uri.parse('$baseUrl/db/playlists/$playlistId/tracks/$videoId'),
+      headers: _getHeaders(),
+    );
   }
 
   Future<void> reorderPlaylistTracks(String playlistId, List<String> trackIds) async {
     await http.put(
       Uri.parse('$baseUrl/db/playlists/$playlistId/reorder'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _getHeaders(additionalHeaders: {'Content-Type': 'application/json'}),
       body: json.encode(trackIds),
     );
   }
@@ -268,20 +323,23 @@ class ApiService {
   Future<void> reorderFavorites(List<String> trackIds) async {
     await http.put(
       Uri.parse('$baseUrl/db/favorites/reorder'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _getHeaders(additionalHeaders: {'Content-Type': 'application/json'}),
       body: json.encode(trackIds),
     );
   }
 
   Future<void> clearFavorites() async {
-    await http.delete(Uri.parse('$baseUrl/db/favorites'));
+    await http.delete(
+      Uri.parse('$baseUrl/db/favorites'),
+      headers: _getHeaders(),
+    );
   }
 
   Future<bool> updateThumbnail(String videoId, String imageUrl) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/db/tracks/$videoId/thumbnail'),
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        headers: _getHeaders(additionalHeaders: {'Content-Type': 'application/x-www-form-urlencoded'}),
         body: {'image_url': imageUrl},
       );
       return response.statusCode == 200;
@@ -294,6 +352,7 @@ class ApiService {
   Future<String?> uploadImage(List<int> bytes, String filename) async {
     try {
       var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/db/upload_image'));
+      request.headers.addAll(_getHeaders());
       request.files.add(http.MultipartFile.fromBytes(
         'file',
         bytes,
