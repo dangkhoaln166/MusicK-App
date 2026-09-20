@@ -18,7 +18,6 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> with WidgetsBin
   late List<GlobalKey> _keys;
   int _currentIndex = 0;
   StreamSubscription? _positionSub;
-  bool _isScrolling = false;
 
   static const double _activeFontSize = 36.0;
   static const double _inactiveFontSize = 26.0;
@@ -63,26 +62,26 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> with WidgetsBin
   }
 
   void _scrollToActive(int index) async {
-    if (_isScrolling) return;
-    _isScrolling = true;
-
+    // We don't block multiple scrolls. If a new lyric comes up quickly, 
+    // the new ensureVisible will override the ongoing one.
+    
     // Wait for rebuild with updated sizes
     await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) {
-      _isScrolling = false;
-      return;
-    }
+    if (!mounted) return;
 
     final key = _keys[index];
     if (key.currentContext != null) {
-      await Scrollable.ensureVisible(
-        key.currentContext!,
-        duration: const Duration(milliseconds: 550),
-        curve: Curves.easeInOutCubic,
-        alignment: 0.5, // center the active lyric
-      );
+      try {
+        await Scrollable.ensureVisible(
+          key.currentContext!,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOutCubic,
+          alignment: 0.5, // center the active lyric
+        );
+      } catch (e) {
+        debugPrint('Scroll error: $e');
+      }
     }
-    _isScrolling = false;
   }
 
   @override
