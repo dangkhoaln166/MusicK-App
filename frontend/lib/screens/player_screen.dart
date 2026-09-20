@@ -50,15 +50,14 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
       _lyricsCache.clear();
       _lyricsLanguage = LyricsLanguage.original;
       
-      _lyricsFuture = ApiService().getCustomLyrics(track.videoId).then((customData) {
-        if (customData != null) return customData;
-        return ApiService().getLyrics(track.title, videoId: track.videoId);
-      }).then((data) {
+      _lyricsFuture = () async {
+        final customData = await ApiService().getCustomLyrics(track.videoId);
+        final data = customData ?? await ApiService().getLyrics(track.title, videoId: track.videoId);
         if (data != null && mounted) {
           _lyricsCache[LyricsLanguage.original] = data;
         }
         return data;
-      });
+      }();
     }
   }
   
