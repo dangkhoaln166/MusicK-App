@@ -114,7 +114,7 @@ class ChartDetailScreen extends StatelessWidget {
           if (tracks.isNotEmpty) {
             final mp = Provider.of<MusicProvider>(context, listen: false);
             mp.playPlaylist(tracks);
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+            Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
           }
         },
         child: const Icon(Icons.play_arrow, size: 32, color: Colors.white),
@@ -166,7 +166,7 @@ class __ChartListItemState extends State<_ChartListItem> {
         onTap: () {
           final mp = Provider.of<MusicProvider>(context, listen: false);
           mp.playTrack(track);
-          Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+          Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),

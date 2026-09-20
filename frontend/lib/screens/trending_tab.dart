@@ -129,7 +129,7 @@ class _TrendingTabState extends State<TrendingTab> {
                 onTap: () {
                   final mp = Provider.of<MusicProvider>(context, listen: false);
                   mp.playTrack(track);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+                  Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
                 },
                 child: Container(
                   width: 160,

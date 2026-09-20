@@ -187,7 +187,7 @@ class _HomeTabState extends State<HomeTab> {
                                 InkWell(
                                   onTap: () {
                                     musicProvider.playTrack(track);
-                                    Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+                                    Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
                                   },
                                   borderRadius: BorderRadius.circular(12),
                                   child: Container(
@@ -442,7 +442,7 @@ class _HomeTabState extends State<HomeTab> {
                               onPressed: () {
                                 if (mp.recentlyPlayed.isNotEmpty) {
                                   mp.playTrack(mp.recentlyPlayed.first);
-                                  Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+                                  Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
                                 }
                               },
                             ),

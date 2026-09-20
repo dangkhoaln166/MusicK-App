@@ -271,8 +271,7 @@ class _SearchTabState extends State<SearchTab> {
                               if (musicProvider.currentTrack?.videoId != track.videoId) {
                                 musicProvider.playTrack(track);
                               }
-                              Navigator.push(
-                                context,
+                              Navigator.of(context, rootNavigator: true).push(
                                 MaterialPageRoute(builder: (context) => const PlayerScreen()),
                               );
                             },

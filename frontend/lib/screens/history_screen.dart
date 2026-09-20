@@ -100,8 +100,7 @@ class HistoryScreen extends StatelessWidget {
                       if (musicProvider.currentTrack?.videoId != track.videoId) {
                         musicProvider.playPlaylist(history, startIndex: index);
                       }
-                      Navigator.push(
-                        context,
+                      Navigator.of(context, rootNavigator: true).push(
                         MaterialPageRoute(builder: (context) => const PlayerScreen()),
                       );
                     },

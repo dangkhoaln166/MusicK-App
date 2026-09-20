@@ -148,8 +148,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                         final tracks = playlist.tracks;
                         final randomIndex = (DateTime.now().millisecondsSinceEpoch % tracks.length).toInt();
                         musicProvider.playPlaylist(tracks, startIndex: randomIndex);
-                        Navigator.push(
-                          context,
+                        Navigator.of(context, rootNavigator: true).push(
                           MaterialPageRoute(builder: (context) => const PlayerScreen()),
                         );
                       },
@@ -168,8 +167,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                     ElevatedButton.icon(
                       onPressed: () {
                         musicProvider.playPlaylist(playlist.tracks);
-                        Navigator.push(
-                          context,
+                        Navigator.of(context, rootNavigator: true).push(
                           MaterialPageRoute(builder: (context) => const PlayerScreen()),
                         );
                       },
@@ -296,8 +294,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                     ),
                     onTap: () {
                       musicProvider.playPlaylist(playlist.tracks, startIndex: index);
-                      Navigator.push(
-                        context,
+                      Navigator.of(context, rootNavigator: true).push(
                         MaterialPageRoute(builder: (context) => const PlayerScreen()),
                       );
                     },

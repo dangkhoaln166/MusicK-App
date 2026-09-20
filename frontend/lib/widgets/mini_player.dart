@@ -36,8 +36,7 @@ class MiniPlayer extends StatelessWidget {
       },
       child: GestureDetector(
         onTap: () {
-          Navigator.push(
-            context,
+          Navigator.of(context, rootNavigator: true).push(
             MaterialPageRoute(builder: (context) => const PlayerScreen()),
           );
         },
