@@ -256,8 +256,8 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                 onPressed: isSaving ? null : () async {
                   setDialogState(() => isSaving = true);
                   final text = textController.text.trim();
-                  // Check if it's LRC format
-                  bool isSynced = text.contains(RegExp(r'\[\d{2}:\d{2}\.\d{2}\]'));
+                  // Check if it's LRC format (e.g. [00:15.12] or [00:15])
+                  bool isSynced = RegExp(r'\[\d+:\d+(?:\.\d+)?\]').hasMatch(text);
                   
                   final success = await ApiService().saveCustomLyrics(
                     track.videoId,
