@@ -50,7 +50,10 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
       _lyricsCache.clear();
       _lyricsLanguage = LyricsLanguage.original;
       
-      _lyricsFuture = ApiService().getLyrics(track.title, videoId: track.videoId).then((data) {
+      _lyricsFuture = ApiService().getCustomLyrics(track.videoId).then((customData) {
+        if (customData != null) return customData;
+        return ApiService().getLyrics(track.title, videoId: track.videoId);
+      }).then((data) {
         if (data != null && mounted) {
           _lyricsCache[LyricsLanguage.original] = data;
         }
@@ -219,6 +222,77 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     );
   }
 
+  void _showEditLyricsDialog(BuildContext context, Track track, Map<String, dynamic>? currentLyricsData) {
+    final TextEditingController textController = TextEditingController(
+        text: currentLyricsData?['syncedLyrics'] ?? currentLyricsData?['plainLyrics'] ?? '');
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Sửa lời bài hát', style: TextStyle(color: Colors.white)),
+            backgroundColor: Colors.grey.shade900,
+            content: SizedBox(
+              width: double.maxFinite,
+              child: TextField(
+                controller: textController,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                maxLines: 15,
+                decoration: const InputDecoration(
+                  hintText: 'Dán lời bài hát (dạng trơn hoặc file .lrc) vào đây...',
+                  hintStyle: TextStyle(color: Colors.white54),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(c),
+                child: const Text('Hủy', style: TextStyle(color: Colors.white70)),
+              ),
+              TextButton(
+                onPressed: isSaving ? null : () async {
+                  setDialogState(() => isSaving = true);
+                  final text = textController.text.trim();
+                  // Check if it's LRC format
+                  bool isSynced = text.contains(RegExp(r'\[\d{2}:\d{2}\.\d{2}\]'));
+                  
+                  final success = await ApiService().saveCustomLyrics(
+                    track.videoId,
+                    isSynced ? null : text,
+                    isSynced ? text : null,
+                  );
+                  
+                  if (success) {
+                    if (mounted) {
+                      CustomToast.show(context, 'Đã lưu lời bài hát!');
+                      // Trigger a reload
+                      setState(() {
+                        _cachedTrack = null;
+                      });
+                      didChangeDependencies();
+                      Navigator.pop(c);
+                    }
+                  } else {
+                    if (mounted) {
+                      CustomToast.show(context, 'Có lỗi khi lưu lời bài hát.');
+                      setDialogState(() => isSaving = false);
+                    }
+                  }
+                },
+                child: isSaving 
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Lưu', style: TextStyle(color: Colors.blueAccent)),
+              ),
+            ],
+          );
+        }
+      ),
+    );
+  }
+
   Widget _buildLyricsView(Track track) {
     return FutureBuilder<Map<String, dynamic>?>(
       future: _lyricsFuture,
@@ -266,7 +340,18 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
             Positioned(
               top: 16,
               right: 16,
-              child: _buildLanguageToggleBtn(),
+              child: Row(
+                children: [
+                  if (snapshot.connectionState != ConnectionState.waiting)
+                    IconButton(
+                      icon: const Icon(Icons.edit_note, color: Colors.white70),
+                      onPressed: () => _showEditLyricsDialog(context, track, snapshot.data),
+                      tooltip: 'Sửa lời bài hát',
+                    ),
+                  const SizedBox(width: 8),
+                  _buildLanguageToggleBtn(),
+                ],
+              ),
             ),
           ],
         );

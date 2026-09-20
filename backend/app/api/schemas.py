@@ -37,3 +37,8 @@ class Setting(BaseModel):
 
     class Config:
         from_attributes = True
+
+class CustomLyricCreate(BaseModel):
+    plain_lyrics: Optional[str] = None
+    synced_lyrics: Optional[str] = None
+

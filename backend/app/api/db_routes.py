@@ -273,3 +273,35 @@ def update_settings(request: Request, settings: dict, db: Session = Depends(get_
             db.add(db_setting)
     db.commit()
     return {"status": "success"}
+
+@router.get("/lyrics/{video_id}")
+def get_custom_lyrics(request: Request, video_id: str, db: Session = Depends(get_db)):
+    user_id = get_user_id(request)
+    custom = db.query(models.CustomLyric).filter(models.CustomLyric.user_id == user_id, models.CustomLyric.video_id == video_id).first()
+    if custom:
+        return {
+            "lyrics": {
+                "plainLyrics": custom.plain_lyrics,
+                "syncedLyrics": custom.synced_lyrics,
+                "lang": "custom"
+            }
+        }
+    raise HTTPException(status_code=404, detail="Custom lyrics not found")
+
+@router.post("/lyrics/{video_id}")
+def save_custom_lyrics(request: Request, video_id: str, payload: schemas.CustomLyricCreate, db: Session = Depends(get_db)):
+    user_id = get_user_id(request)
+    custom = db.query(models.CustomLyric).filter(models.CustomLyric.user_id == user_id, models.CustomLyric.video_id == video_id).first()
+    if custom:
+        custom.plain_lyrics = payload.plain_lyrics
+        custom.synced_lyrics = payload.synced_lyrics
+    else:
+        custom = models.CustomLyric(
+            user_id=user_id,
+            video_id=video_id,
+            plain_lyrics=payload.plain_lyrics,
+            synced_lyrics=payload.synced_lyrics
+        )
+        db.add(custom)
+    db.commit()
+    return {"status": "success"}
