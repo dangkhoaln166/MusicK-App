@@ -126,4 +126,54 @@ class PlaylistUtils {
       },
     );
   }
+
+  static void showCreatePlaylistDialog(BuildContext context) {
+    final TextEditingController controller = TextEditingController();
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
+    final isDark = settings.isDarkMode;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: isDark ? Colors.grey.shade900 : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text('Tạo Playlist mới', style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
+          content: TextField(
+            controller: controller,
+            style: TextStyle(color: textColor, fontSize: 18),
+            decoration: InputDecoration(
+              hintText: 'Tên Playlist...',
+              hintStyle: TextStyle(color: isDark ? Colors.grey.shade600 : Colors.grey.shade400),
+              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: isDark ? Colors.white24 : Colors.black12)),
+              focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
+            ),
+            autofocus: true,
+          ),
+          actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Hủy', style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 16)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blueAccent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              onPressed: () {
+                if (controller.text.trim().isNotEmpty) {
+                  Provider.of<MusicProvider>(context, listen: false).createPlaylist(controller.text);
+                }
+                Navigator.pop(ctx);
+              },
+              child: const Text('Tạo', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
