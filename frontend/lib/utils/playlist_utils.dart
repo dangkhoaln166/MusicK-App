@@ -29,10 +29,19 @@ class PlaylistUtils {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Add to Playlist', style: TextStyle(color: textColor, fontSize: 20, fontWeight: FontWeight.bold)),
-                      IconButton(
-                        icon: Icon(Icons.close, color: isDark ? Colors.white54 : Colors.black54),
-                        onPressed: () => Navigator.pop(context),
+                      Text('Thêm vào Playlist', style: TextStyle(color: textColor, fontSize: 20, fontWeight: FontWeight.bold)),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.add_circle_outline, color: Colors.blueAccent),
+                            tooltip: 'Tạo Playlist mới',
+                            onPressed: () => showCreatePlaylistDialog(context),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.close, color: isDark ? Colors.white54 : Colors.black54),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -49,9 +58,9 @@ class PlaylistUtils {
                             children: [
                               const Icon(Icons.library_music_outlined, size: 60, color: Colors.white24),
                               const SizedBox(height: 16),
-                              const Text("No Playlists Found", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                              const Text("Chưa có Playlist nào", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                               const SizedBox(height: 8),
-                              const Text("Go to the Library tab to create your first playlist!", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
+                              const Text("Bấm vào biểu tượng dấu + ở trên để tạo playlist đầu tiên của bạn!", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
                             ],
                           ),
                         );
@@ -88,7 +97,7 @@ class PlaylistUtils {
                               style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
                             ),
                             subtitle: Text(
-                              '${playlist.tracks.length} tracks',
+                              '${playlist.tracks.length} bài hát',
                               style: TextStyle(color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
                             ),
                             trailing: isAlreadyAdded
@@ -97,10 +106,10 @@ class PlaylistUtils {
                             onTap: () {
                               if (isAlreadyAdded) {
                                 mp.removeTrackFromPlaylist(playlist.id, track.videoId);
-                                CustomToast.show(context, 'Removed from ${playlist.name}', icon: Icons.remove_circle_outline, color: Colors.orangeAccent);
+                                CustomToast.show(context, 'Đã bỏ khỏi ${playlist.name}', icon: Icons.remove_circle_outline, color: Colors.orangeAccent);
                               } else {
                                 mp.addTrackToPlaylist(playlist.id, track);
-                                CustomToast.show(context, 'Added to ${playlist.name}', icon: Icons.check_circle, color: Colors.greenAccent);
+                                CustomToast.show(context, 'Đã thêm vào ${playlist.name}', icon: Icons.check_circle, color: Colors.greenAccent);
                                 Navigator.pop(context); // Optional: close after adding
                               }
                             },
