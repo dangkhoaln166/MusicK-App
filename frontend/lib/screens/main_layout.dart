@@ -25,6 +25,24 @@ class _MainLayoutState extends State<MainLayout> {
     const LibraryTab(),
   ];
 
+  final List<GlobalKey<NavigatorState>> _navigatorKeys = [
+    GlobalKey<NavigatorState>(),
+    GlobalKey<NavigatorState>(),
+    GlobalKey<NavigatorState>(),
+    GlobalKey<NavigatorState>(),
+  ];
+
+  Widget _buildNavigator(int index) {
+    return Navigator(
+      key: _navigatorKeys[index],
+      onGenerateRoute: (settings) {
+        return MaterialPageRoute(
+          builder: (context) => _pages[index],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasTrack = context.select<MusicProvider, bool>((p) => p.currentTrack != null);
@@ -33,86 +51,91 @@ class _MainLayoutState extends State<MainLayout> {
     final isDesktop = MediaQuery.of(context).size.width > 800;
     final isDark = Provider.of<SettingsProvider>(context).isDarkMode;
 
-    return Scaffold(
-      body: Row(
-        children: [
-          if (isDesktop)
-            NavigationRail(
-              backgroundColor: isDark ? Colors.black : Colors.white,
-              selectedIndex: _selectedIndex,
-              onDestinationSelected: (int index) {
-                setState(() {
-                  _selectedIndex = index;
-                });
-              },
-              labelType: NavigationRailLabelType.all,
-              useIndicator: true,
-              indicatorColor: Colors.blueAccent.withOpacity(0.2),
-              selectedIconTheme: const IconThemeData(color: Colors.blueAccent),
-              unselectedIconTheme: IconThemeData(color: Colors.grey.shade500),
-              selectedLabelTextStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
-              unselectedLabelTextStyle: TextStyle(color: Colors.grey.shade500),
-              destinations: [
-                NavigationRailDestination(
-                  icon: const Icon(Icons.home_outlined),
-                  selectedIcon: const Icon(Icons.home),
-                  label: Text(Provider.of<SettingsProvider>(context).t('home')),
-                ),
-                const NavigationRailDestination(
-                  icon: Icon(Icons.local_fire_department_outlined),
-                  selectedIcon: Icon(Icons.local_fire_department),
-                  label: Text('Trending'),
-                ),
-                NavigationRailDestination(
-                  icon: const Icon(Icons.search_outlined),
-                  selectedIcon: const Icon(Icons.search),
-                  label: Text(Provider.of<SettingsProvider>(context).t('search')),
-                ),
-                NavigationRailDestination(
-                  icon: const Icon(Icons.library_music_outlined),
-                  selectedIcon: const Icon(Icons.library_music),
-                  label: Text(Provider.of<SettingsProvider>(context).t('library')),
-                ),
-              ],
-              trailing: Expanded(
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 24.0),
-                    child: IconButton(
-                      icon: const Icon(Icons.settings, color: Colors.grey),
-                      onPressed: () => _showSettingsDialog(context),
+    return WillPopScope(
+      onWillPop: () async {
+        final currentNav = _navigatorKeys[_selectedIndex].currentState;
+        if (currentNav != null && currentNav.canPop()) {
+          currentNav.pop();
+          return false;
+        }
+        if (_selectedIndex != 0) {
+          setState(() {
+            _selectedIndex = 0;
+          });
+          return false;
+        }
+        return true;
+      },
+      child: Scaffold(
+        body: Row(
+          children: [
+            if (isDesktop)
+              NavigationRail(
+                backgroundColor: isDark ? Colors.black : Colors.white,
+                selectedIndex: _selectedIndex,
+                onDestinationSelected: (int index) {
+                  setState(() {
+                    if (_selectedIndex == index) {
+                      // Pop to root of this tab
+                      _navigatorKeys[index].currentState?.popUntil((route) => route.isFirst);
+                    } else {
+                      _selectedIndex = index;
+                    }
+                  });
+                },
+                labelType: NavigationRailLabelType.all,
+                useIndicator: true,
+                indicatorColor: Colors.blueAccent.withOpacity(0.2),
+                selectedIconTheme: const IconThemeData(color: Colors.blueAccent),
+                unselectedIconTheme: IconThemeData(color: Colors.grey.shade500),
+                selectedLabelTextStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
+                unselectedLabelTextStyle: TextStyle(color: Colors.grey.shade500),
+                destinations: [
+                  NavigationRailDestination(
+                    icon: const Icon(Icons.home_outlined),
+                    selectedIcon: const Icon(Icons.home),
+                    label: Text(Provider.of<SettingsProvider>(context).t('home')),
+                  ),
+                  const NavigationRailDestination(
+                    icon: Icon(Icons.local_fire_department_outlined),
+                    selectedIcon: Icon(Icons.local_fire_department),
+                    label: Text('Trending'),
+                  ),
+                  NavigationRailDestination(
+                    icon: const Icon(Icons.search_outlined),
+                    selectedIcon: const Icon(Icons.search),
+                    label: Text(Provider.of<SettingsProvider>(context).t('search')),
+                  ),
+                  NavigationRailDestination(
+                    icon: const Icon(Icons.library_music_outlined),
+                    selectedIcon: const Icon(Icons.library_music),
+                    label: Text(Provider.of<SettingsProvider>(context).t('library')),
+                  ),
+                ],
+                trailing: Expanded(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 24.0),
+                      child: IconButton(
+                        icon: const Icon(Icons.settings, color: Colors.grey),
+                        onPressed: () => _showSettingsDialog(context),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          
-          if (isDesktop)
-            const VerticalDivider(thickness: 1, width: 1, color: Colors.white10),
             
-          Expanded(
-            child: Stack(
-              children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  transitionBuilder: (Widget child, Animation<double> animation) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0.02, 0.0),
-                          end: Offset.zero,
-                        ).animate(animation),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: Container(
-                    key: ValueKey<int>(_selectedIndex),
-                    child: _pages[_selectedIndex],
+            if (isDesktop)
+              const VerticalDivider(thickness: 1, width: 1, color: Colors.white10),
+              
+            Expanded(
+              child: Stack(
+                children: [
+                  IndexedStack(
+                    index: _selectedIndex,
+                    children: List.generate(4, (index) => _buildNavigator(index)),
                   ),
-                ),
                 if (hasTrack && isDesktop)
                   const Positioned(
                     bottom: 0,
@@ -166,6 +189,7 @@ class _MainLayoutState extends State<MainLayout> {
               ],
             )
           : null,
+      ),
     );
   }
 
