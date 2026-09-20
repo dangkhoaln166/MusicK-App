@@ -185,6 +185,11 @@ def _do_extract_stream_urls(video_id: str) -> Dict[str, Optional[str]]:
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
             },
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'web']
+                }
+            }
         }
         ydl_opts.update(extra_opts)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
