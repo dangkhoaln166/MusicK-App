@@ -55,6 +55,15 @@ class Setting(Base):
     key = Column(String, primary_key=True, index=True)
     value = Column(String, nullable=False)
 
+class CustomLyric(Base):
+    __tablename__ = "custom_lyrics"
+
+    user_id = Column(String, primary_key=True, index=True)
+    video_id = Column(String, primary_key=True, index=True)
+    plain_lyrics = Column(String, nullable=True)
+    synced_lyrics = Column(String, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class LyricCache(Base):
     __tablename__ = "lyric_cache"
 

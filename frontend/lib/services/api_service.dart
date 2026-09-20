@@ -370,4 +370,35 @@ class ApiService {
     }
     return null;
   }
+  Future<Map<String, dynamic>?> getCustomLyrics(String videoId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/db/lyrics/$videoId'),
+        headers: _getHeaders(),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body)['lyrics'];
+      }
+    } catch (e) {
+      print('getCustomLyrics error: $e');
+    }
+    return null;
+  }
+
+  Future<bool> saveCustomLyrics(String videoId, String? plainLyrics, String? syncedLyrics) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/db/lyrics/$videoId'),
+        headers: _getHeaders(additionalHeaders: {'Content-Type': 'application/json'}),
+        body: json.encode({
+          'plain_lyrics': plainLyrics,
+          'synced_lyrics': syncedLyrics,
+        }),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('saveCustomLyrics error: $e');
+      return false;
+    }
+  }
 }
