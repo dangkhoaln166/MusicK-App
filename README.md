@@ -61,11 +61,11 @@ python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ### Frontend Setup
 
-To run on Web without CORS issues (Chrome):
+To run on Web without CORS issues and persist data (Chrome):
 ```bash
 cd frontend
 flutter pub get
-flutter run -d chrome --web-port=3000 --web-browser-flag="--disable-web-security"
+flutter run -d chrome --web-port=3000 --web-browser-flag="--disable-web-security" --web-browser-flag="--user-data-dir=D:\musick_chrome_data"
 ```
 
 ## 📸 Screenshots
