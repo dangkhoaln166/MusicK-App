@@ -605,8 +605,7 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
   Widget _buildBottomPlayerBar(BuildContext context, Track track, bool isWide) {
     if (isWide) {
       return Container(
-        height: 85,
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         decoration: BoxDecoration(color: Colors.grey.shade900.withOpacity(0.8)),
         child: Row(
           children: [
@@ -619,6 +618,7 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 600),
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _buildControls(context),
