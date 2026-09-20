@@ -6,6 +6,7 @@ import '../providers/settings_provider.dart';
 import '../models/track.dart';
 import '../utils/custom_toast.dart';
 import 'player_screen.dart';
+import '../utils/playlist_utils.dart';
 
 class ChartDetailScreen extends StatelessWidget {
   final String title;
@@ -332,9 +333,18 @@ class __ChartListItemState extends State<_ChartListItem> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Thêm vào Playlist', style: TextStyle(color: textColor, fontSize: 20, fontWeight: FontWeight.bold)),
-                      IconButton(
-                        icon: Icon(Icons.close, color: isDark ? Colors.white54 : Colors.black54),
-                        onPressed: () => Navigator.pop(context),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.add_circle_outline, color: Colors.blueAccent),
+                            tooltip: 'Tạo Playlist mới',
+                            onPressed: () => PlaylistUtils.showCreatePlaylistDialog(context),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.close, color: isDark ? Colors.white54 : Colors.black54),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
                       ),
                     ],
                   ),

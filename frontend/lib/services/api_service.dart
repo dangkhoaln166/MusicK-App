@@ -7,7 +7,8 @@ import 'device_service.dart';
 
 class ApiService {
   // Use Render deployment URL for production and cross-device syncing
-  static const String baseUrl = 'https://musick-app.onrender.com/api';
+  static const String baseUrl = 'http://127.0.0.1:8000/api';
+  // static const String baseUrl = 'https://musick-app.onrender.com/api';
 
   static Map<String, String> _getHeaders({Map<String, String>? additionalHeaders}) {
     final headers = {

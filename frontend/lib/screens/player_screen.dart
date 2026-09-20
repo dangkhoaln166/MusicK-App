@@ -8,6 +8,7 @@ import '../utils/custom_toast.dart';
 import '../models/lyric_line.dart';
 import '../services/api_service.dart';
 import '../widgets/synced_lyrics_widget.dart';
+import '../utils/playlist_utils.dart';
 
 enum LyricsLanguage { original, romaji, translatedVi, translatedEn }
 
@@ -960,10 +961,19 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Add to Playlist', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white54),
-                        onPressed: () => Navigator.pop(context),
+                      const Text('Thêm vào Playlist', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.add_circle_outline, color: Colors.blueAccent),
+                            tooltip: 'Tạo Playlist mới',
+                            onPressed: () => _showCreatePlaylistDialog(context),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white54),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -979,10 +989,10 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               const Icon(Icons.library_music_outlined, size: 60, color: Colors.white24),
-                              SizedBox(height: 16),
-                              const Text("No Playlists Found", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 16),
+                              const Text("Chưa có Playlist nào", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                               const SizedBox(height: 8),
-                              const Text("Go to the Library tab to create your first playlist!", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
+                              const Text("Bấm vào biểu tượng dấu + ở trên để tạo playlist đầu tiên của bạn!", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
                               const SizedBox(height: 16),
                               ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
@@ -994,7 +1004,7 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                                   _showCreatePlaylistDialog(context);
                                 },
                                 icon: const Icon(Icons.add),
-                                label: const Text('Create Playlist', style: TextStyle(fontWeight: FontWeight.bold)),
+                                label: const Text('Tạo Playlist', style: TextStyle(fontWeight: FontWeight.bold)),
                               ),
                             ],
                           ),
